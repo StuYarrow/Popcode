@@ -252,91 +252,73 @@ classdef Neurons
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
 			end
+			
+			% Get mean responses for each stimulus ordinate
+			% obj.popSize x stim.n
+			rMean = obj.integrationTime .* meanR(obj, stim);
+			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
 
-			if length(n) ~= 0
+			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+			QCell1 = Q(obj, rMeanCell);
+
+			% Compute Cholesky decomps of Q matrices
+			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+
+			% Invert Q matrices and compute Cholesky decomps
+			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
+			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
+
+			% Replicate cell arrays
+			invQCell = repmat(invQCell', [1 stim.n]);
+			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
+			QCell = repmat(QCell1', [1 stim.n]);
+			rMeanCella = repmat(rMeanCell', [1 stim.n]);
+			
+			if ~isempty(n)
 				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
 				margMask = ones(obj.popSize, 1);
 				margMask(n) = false;
 				% Number of remaining neurons
 				nMarg = sum(margMask);
 				margMask = logical(margMask);
-			end
-
-			% Get mean responses for each stimulus ordinate
-			% obj.popSize x stim.n
-			rMean = obj.integrationTime .* meanR(obj, stim);
-			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
-			if exist('margMask')
+				
+				% Get mean responses for each stimulus ordinate
 				rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
-			end
-
-			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-			QCell1 = Q(obj, rMeanCell);
-			if exist('margMask')
+				
+				% Compute mean response dependent cov matrix stack Q
 				QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
-			end
-
-			% Compute Cholesky decomps of Q matrices
-			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
-			if exist('margMask')
+				
+				% Compute Cholesky decomps of Q matrices
 				cholQMarg = cellfun(@(q) chol(q)', QCellMarg1, 'UniformOutput', false);
-			end
-
-			% Normalisation terms for multivariate Gaussian
-			%normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
-			%normFactor = mat2cell(normFactor, 1, ones(length(normFactor), 1));
-			%normFactor = repmat(normFactor', 1, stim.n);
-			%if exist('margMask')
-			%	normFactorMarg = 1.0 ./ ((2.0 * pi).^(nMarg ./ 2.0) .* cellfun(@det, QCellMarg1).^0.5);
-			%	normFactorMarg = mat2cell(normFactorMarg, 1, ones(length(normFactorMarg), 1));
-			%	normFactorMarg = repmat(normFactorMarg', 1, stim.n);
-			%end
-
-			% Invert Q matrices and compute Cholesky decomps
-			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
-			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
-			if exist('margMask')
+				
+				% Invert Q matrices and compute Cholesky decomps
 				invQCellMarg = cellfun(@inv, QCellMarg1, 'UniformOutput', false);
 				cholInvQCellMarg = cellfun(@chol, invQCellMarg, 'UniformOutput', false);
-			end
-
-			% Replicate cell arrays
-			invQCell = repmat(invQCell', [1 stim.n]);
-			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
-			QCell = repmat(QCell1', [1 stim.n]);
-
-			if exist('margMask')
+				
+				% Replicate cell arrays
 				invQCellMarg = repmat(invQCellMarg', [1 stim.n]);
 				cholInvQCellMarg = repmat(cholInvQCellMarg', [1 stim.n]);
 				QCellMarg = repmat(QCellMarg1', [1 stim.n]);
-			end
-
-			rMeanCella = repmat(rMeanCell', [1 stim.n]);
-			if exist('margMask')
+				
 				rMeanMargCella = repmat(rMeanMargCell', [1 stim.n]);
 			end
-
+			
 			% Define function for multivariate gaussian sampling
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-			% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
-			fRand = @(m, c, z) max((m + c * z), 0.0);
-			%fRand = @(m, c, z) m + c * z;
+			% Comment as appropriate if you want to truncate at zero
+			% This will mess up the Gaussianity
+			%fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+			fRand = @(m, c, z) m + c * z; % don't truncate
 
 			% Define multivariate Gaussian pdf
+			% Don't need this as we are using Lightspeed normpdf
 			%fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
-			fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
+			%fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
 
 			iter = 1;
 			cont = true;
 			hfPwrSSI = 0;
-
-			%delta = ones(1, stim.n);
-			%deltaBuf = ones(16, stim.n);
-			%lastSSI = delta;
-
-			%gradBuf = rand(32,1);
-			%varGrad = var(gradBuf);
-
+			
 			while cont
 				if ~mod(iter, 10)
 					disp(sprintf('SSI  iter: %d  HF power: %.4e', iter, hfPwrSSI))
@@ -389,7 +371,7 @@ classdef Neurons
 
 				% Issi(s)
 				% SSI; average of Isp over all r samples
-				% If using QR sampling, need to factor in P(r) here
+				% If using quasi-random sampling, need to factor in P(r) here
 				switch method
 				case 'randMC'
 					fullSSI = mean(iSP, 1);
@@ -448,15 +430,6 @@ classdef Neurons
 					SSI = fullSSI;
 				end
 
-				%deltaBuf(1+mod(iter, 16),:) = abs(lastSSI - SSI);
-				%delta = mean(deltaBuf, 1);
-				%lastSSI = SSI;
-				%cont = max(abs(delta)) > tol;
-
-				%gradBuf(1+mod(iter,32)) = mean(abs(diff(diff(SSI))));
-				%varGrad = var(gradBuf);
-				%cont = gradBuf(1+mod(iter,32)) > 3e-2 | varGrad > 1e-6;
-
 				hfPwrSSI = hfpwr1(SSI);
 
 				if ~mod(iter, 10)
@@ -479,7 +452,7 @@ classdef Neurons
 
 			%save(['/tmp/ssi_' datestr(now, 'yyyymmddHHMMSS')])
 
-			disp(sprintf('SSI  iter: %d  elapsed time: %.4f seconds', iter - 1, toc))
+			fprintf('SSI  iter: %d  elapsed time: %.4f seconds', iter - 1, toc)
 
 			switch nargout
 			case 1
@@ -558,11 +531,11 @@ classdef Neurons
 				k_prime = repmat({zeros(obj.popSize,1)}, [1, stim.n]);
 				Q_prime = cellfun(@(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
 
-				d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
-				d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
-				D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
-				D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
-				J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
+				%d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
+				%d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
+				%D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
+				%D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
+				%J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
 
 				% ==============================================================
 				% Fisher Information
