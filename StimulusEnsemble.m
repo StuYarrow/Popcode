@@ -16,7 +16,7 @@ classdef StimulusEnsemble
                     modulo = double(varargin{2});
                     number = double(varargin{3});
                     spacing = modulo / number;
-                    obj.circular = true;
+                    obj.circular = modulo;
                     obj.ensemble = [-modulo/2 + spacing : spacing : modulo/2];
                     obj.width = spacing * ones(1, number);
                     obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
@@ -36,13 +36,6 @@ classdef StimulusEnsemble
                     obj.ensemble = [bottom : spacing : top];
                     obj.width = diff(obj.ensemble);
                     obj.width = 0.5 * ([obj.width(1) obj.width] + [obj.width obj.width(end)]);
-
-                case 'circular'
-                    obj.circular = true;
-                    spacing = (top - bottom) / double(number);
-                    top = top - spacing;
-                    obj.ensemble = [bottom : spacing : top];
-                    obj.width = spacing * ones(1, number);
 
                 otherwise
                     error([strvarargin{1} ' is not a valid option'])
@@ -73,7 +66,7 @@ classdef StimulusEnsemble
 			psStr = num2str(obj.pS);
 			
 			formatStr = ['Dimensionality:  %.0f\n'...
-						 'Circularity:     ' circularStr '\n'...
+						 'Modulo:          ' circularStr '\n'...
 						 'Stimulus values: ' ensembleStr '\n'...
 						 'Bin widths:      ' widthStr '\n'...
 						 'P(s):            ' psStr];
