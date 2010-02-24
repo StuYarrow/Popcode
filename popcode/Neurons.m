@@ -27,9 +27,9 @@ classdef Neurons
 		%	integrationTime - spike counting time per trial
 		%
 		%	maxFiringRate and backgroundFiringRate can be scalars or vectors of length popSize
-			
-			varargin{1}
-			size(varargin{2})
+
+			%varargin
+			%size(varargin{2})
 		
 			switch nargin
 			case 7
@@ -365,8 +365,8 @@ classdef Neurons
 				% Replicate to form a stim.n x stim.n cell array of response vectors
 				rCell = repmat(rCella, [stim.n 1]);
 				% Calculate response probability densities
-				pRgS = cellfun(@normpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n stim.n]));	
-
+				pRgS = cellfun(@normpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n stim.n]));
+                
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
 				pRS = pRgS .* repmat(stim.pS', [1 stim.n]) + 1e-99; % stim'.n x stim
@@ -494,7 +494,7 @@ classdef Neurons
 		end
 
 		function varargout = fisher(obj, method, stim, tol)
-
+			
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
 			end
@@ -767,6 +767,52 @@ classdef Neurons
 			ifishRem = stim.entropy - sum(stim.pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ FIrem));
 
 			ifish = ifishTotal - ifishRem;
+		end
+		
+		function ssif = SSIfisher(obj, stim, fisherMethod, tol)
+			% sigma(s)
+			% Compute SD of optimal estimator as a function of the stimulus
+			sigma = fisher(obj, fisherMethod, stim, tol) .^ -0.5;
+			
+			sigmaMat = repmat(sigma, [stim.n 1]);
+			
+			% S stimulus
+			sMat = repmat(stim.ensemble, [stim.n 1]);
+			% sHat stimulus estimate
+			sHatMat = repmat(stim.ensemble', [1 stim.n]);
+			% p(S)
+			psMat = repmat(stim.pS, [stim.n 1]);
+			
+			if stim.circular
+				% circular difference
+				dS = mod(sHatMat - sMat, stim.circular);
+				i = find(dS > (0.5 * stim.circular));
+				dS(i) = dS(i) - stim.circular;
+				i = find(dS < (-0.5 * stim.circular));
+				dS(i) = dS(i) + stim.circular;
+			else
+				% linear difference
+				dS = sHatMat - sMat;
+			end
+
+			% p(sHat|S)
+			psHat_s = normpdf(dS, 0, sigmaMat);
+			
+			% p(sHat,S)
+			psHats = psHat_s .* psMat + 1e-99;
+			% p(sHat)
+			psHat = sum(psHats, 2);
+			% p(S|sHat)
+			ps_sHat = psHats ./ repmat(psHat, [1 stim.n]);
+			
+			% H(s|sHat) as a function of sHat
+			Hs_sHat = -sum(ps_sHat .* log2(ps_sHat), 2);
+			
+			% Isp(sHat) specific information
+			isp = stim.entropy - Hs_sHat;
+			
+			% SSIfisher
+			ssif = sum(psHat_s .* repmat(isp, [1 stim.n]), 1);
 		end
 		
 		function obj = gainadapt(obj, width, amnt, centre)
