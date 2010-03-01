@@ -128,7 +128,7 @@ classdef Neurons
 			end
 
 			if ~isa(stim, 'StimulusEnsemble')
-				error([inputname(4) ' is not a SimulusEnsemble object'])
+				error([inputname(3) ' is not a SimulusEnsemble object'])
 			end
 
 			% obj.popSize x stim.n
@@ -180,7 +180,8 @@ classdef Neurons
 				switch method
 				case 'randMC'
 					% Sample s from stimulus distribution
-					[dummy bin] = histc(rand(), stim.pScum);
+					[dummy bin] = histc(rand(), cumsum(stim.pS));
+					bin = bin + 1;
 					s = double(stim.ensemble);
 					s = s(bin);
 
@@ -742,7 +743,7 @@ classdef Neurons
 			ifish = ifishTotal - ifishRem;
 		end
 		
-		function ssif = SSIfisher(obj, stim, fisherMethod, tol)
+		function ssif = SSIfisher(obj, fisherMethod, stim, tol)
 			% sigma(s)
 			% Compute SD of optimal estimator as a function of the stimulus
 			sigma = fisher(obj, fisherMethod, stim, tol) .^ -0.5;
@@ -769,7 +770,7 @@ classdef Neurons
 			end
 
 			% p(sHat|S)
-			psHat_s = normpdf(dS, 0, sigmaMat);
+			psHat_s = cellfun(@normpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
 			
 			% p(sHat,S)
 			psHats = psHat_s .* psMat + 1e-99;
