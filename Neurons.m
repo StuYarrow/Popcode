@@ -39,8 +39,8 @@ classdef Neurons
 				else
 					error([inputname(1) ' is not a valid stimulus dimensionality'])
 				end
-
-				if isnumeric(varargin{2}) && size(varargin{2}, 1) == obj.dimensionality
+				
+				if isnumeric(varargin{2}) & size(varargin{2}, 1) == obj.dimensionality
 					obj.preferredStimulus = varargin{2}';
 					obj.popSize = size(varargin{2}, 2);
 				else
@@ -108,7 +108,7 @@ classdef Neurons
 					obj.a = varargin{7}(1); % need checks
 					obj.alpha = varargin{7}(2); % need checks
 					c = varargin{7}(3); % need checks
-					beta = 1.0 ./ deg2rad(varargin{7}(4)).^2; % need checks
+					beta = 1.0 ./ degToRad(varargin{7}(4)).^2; % need checks
 					prefDiff = repmat(obj.preferredStimulus, 1, obj.popSize);
 					prefDiff = prefDiff - prefDiff.';
 					obj.R = c .* exp((cosd(double(prefDiff)) - 1) .* beta) .* ~eye(obj.popSize) + eye(obj.popSize);
@@ -142,30 +142,31 @@ classdef Neurons
 			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
 
 			% Normalisation terms for multivariate Gaussian
-			normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
-			normFactor = mat2cell(normFactor, 1, ones(length(normFactor), 1));
-			normFactor = repmat(normFactor', 1, stim.n);
+			%normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
+			%normFactor = mat2cell(normFactor, 1, ones(length(normFactor), 1));
+			%normFactor = repmat(normFactor', 1, stim.n);
 
 			% Invert Q matrices
 			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
 			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
 
 			% Replicate cell arrays
-			invQCell = repmat(invQCell', [1 stim.n]);
+			%invQCell = repmat(invQCell', [1 stim.n]);
 			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
-			QCell = repmat(QCell1', [1 stim.n]);
+			%QCell = repmat(QCell1', [1 stim.n]);
 
 			rMeanCella = repmat(rMeanCell', [1 stim.n]);
-
+			
 			% Define function for multivariate gaussian sampling
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-			% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
-			fRand = @(m, c, z) max((m + c * z), 0.0);
-			%fRand = @(m, c, z) m + c * z;
+			% Comment as appropriate if you want to truncate at zero
+			% This will mess up the Gaussianity
+			%fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+			fRand = @(m, c, z) m + c * z; % don't truncate
 
 			% Define multivariate Gaussian pdf
 			%fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
-			fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
+			%fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
 
 			iter = 1;
 			miBuf = rand(128,1);
@@ -174,7 +175,7 @@ classdef Neurons
 
 			while cont
 				if ~mod(iter, 100)
-					disp(sprintf('MI  iter: %d  var: %.4e', iter, varBuf))
+					fprintf('MI  iter: %d  var: %.4e\n', iter, varBuf)
 				end
 
 				switch method
@@ -182,14 +183,14 @@ classdef Neurons
 					% Sample s from stimulus distribution
 					[dummy bin] = histc(rand(), cumsum(stim.pS));
 					bin = bin + 1;
-					s = double(stim.ensemble);
-					s = s(bin);
+					%s = double(stim.ensemble);
+					%s = s(bin);
 
 					% Sample r from response distribution
 					% Generate vector of independent normal random numbers (mu=0, sigma=1)
 					z = randn(obj.popSize, 1);
 					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-					% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
+					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO - see above !!!
 					r = fRand(rMeanCell{bin}, cholQ{bin}, z);
 				end
 
@@ -202,7 +203,7 @@ classdef Neurons
 				% Calculate response probability densities
 				%pRgS = cellfun(fPofR, normFactor, subMeanR, invQCell); % stim'.n x stim.n
 				%pRgS = cellfun(@mvnpdf, rCell, rMeanCella, QCell);
-				pRgS = cellfun(@normpdf, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
+				pRgS = cellfun(@lsnormpdf, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
 
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
@@ -236,13 +237,12 @@ classdef Neurons
 		function varargout = ssi(obj, n, method, stim, tol, maxit)
 			tic
 
-			rand('twister', sum(100 * clock));
+			%rand('twister', sum(100 * clock));
 
 			try
 				% Test sanity of indices
-				dummy = obj.preferredStimulus(n);
-				clear dummy
-			catch
+				obj.preferredStimulus(n);
+			catch err
 				error([inputname(2) ' is not a valid neuron index'])
 			end
 
@@ -270,9 +270,9 @@ classdef Neurons
 			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
 
 			% Replicate cell arrays
-			invQCell = repmat(invQCell', [1 stim.n]);
+			%invQCell = repmat(invQCell', [1 stim.n]);
 			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
-			QCell = repmat(QCell1', [1 stim.n]);
+			%QCell = repmat(QCell1', [1 stim.n]);
 			rMeanCella = repmat(rMeanCell', [1 stim.n]);
 			
 			if ~isempty(n)
@@ -280,7 +280,7 @@ classdef Neurons
 				margMask = ones(obj.popSize, 1);
 				margMask(n) = false;
 				% Number of remaining neurons
-				nMarg = sum(margMask);
+				%nMarg = sum(margMask);
 				margMask = logical(margMask);
 				
 				% Get mean responses for each stimulus ordinate
@@ -290,16 +290,16 @@ classdef Neurons
 				QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
 				
 				% Compute Cholesky decomps of Q matrices
-				cholQMarg = cellfun(@(q) chol(q)', QCellMarg1, 'UniformOutput', false);
+				%cholQMarg = cellfun(@(q) chol(q)', QCellMarg1, 'UniformOutput', false);
 				
 				% Invert Q matrices and compute Cholesky decomps
 				invQCellMarg = cellfun(@inv, QCellMarg1, 'UniformOutput', false);
 				cholInvQCellMarg = cellfun(@chol, invQCellMarg, 'UniformOutput', false);
 				
 				% Replicate cell arrays
-				invQCellMarg = repmat(invQCellMarg', [1 stim.n]);
+				%invQCellMarg = repmat(invQCellMarg', [1 stim.n]);
 				cholInvQCellMarg = repmat(cholInvQCellMarg', [1 stim.n]);
-				QCellMarg = repmat(QCellMarg1', [1 stim.n]);
+				%QCellMarg = repmat(QCellMarg1', [1 stim.n]);
 				
 				rMeanMargCella = repmat(rMeanMargCell', [1 stim.n]);
 			end
@@ -312,7 +312,7 @@ classdef Neurons
 			fRand = @(m, c, z) m + c * z; % don't truncate
 
 			% Define multivariate Gaussian pdf
-			% Don't need this as we are using Lightspeed normpdf
+			% Don't need this as we are using Lightspeed lsnormpdf
 			%fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
 			%fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
 
@@ -322,13 +322,16 @@ classdef Neurons
 			
 			while cont
 				if ~mod(iter, 10)
-					disp(sprintf('SSI  iter: %d  HF power: %.4e', iter, hfPwrSSI))
+					fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
+					
+					if exist('/tmp/haltnow', 'file')
+						break
+					end
 				end
 
-				if ~mod(iter, 1000)
-					whos
-					pack
-				end
+				%if ~mod(iter, 1000)
+				%	whos
+				%end
 
 				switch method
 				case 'randMC'
@@ -348,7 +351,7 @@ classdef Neurons
 				% Replicate to form a stim.n x stim.n cell array of response vectors
 				rCell = repmat(rCella, [stim.n 1]);
 				% Calculate response probability densities
-				pRgS = cellfun(@normpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n stim.n]));
+				pRgS = cellfun(@lsnormpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n stim.n]));
                 
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
@@ -380,7 +383,7 @@ classdef Neurons
 					fullSSI = mean(iSP .* pR, 1);
 				end
 
-				if exist('margMask')
+				if exist('margMask', 'var')
 					% If we are calculating a marginal SSI, compute the SSI for remaining neurons
 
 					% Mask out neurons of interest in response vectors
@@ -394,7 +397,7 @@ classdef Neurons
 					%subMeanR = repmat(subMeanR, stim.n, 1);
 					% Calculate response probability densities
 					%pRgS = cellfun(fPofR, normFactorMarg, subMeanR, QCellMarg); % stim'.n x stim.n
-					pRgS = cellfun(@normpdf, rCellMarg, rMeanMargCella, cholInvQCellMarg, repmat({'inv'}, [stim.n stim.n]));
+					pRgS = cellfun(@lsnormpdf, rCellMarg, rMeanMargCella, cholInvQCellMarg, repmat({'inv'}, [stim.n stim.n]));
 
 					% P(r,s)
 					% Mutiply P(r|s) and P(s) to find joint distribution
@@ -453,7 +456,7 @@ classdef Neurons
 
 			%save(['/tmp/ssi_' datestr(now, 'yyyymmddHHMMSS')])
 
-			fprintf('SSI  iter: %d  elapsed time: %.4f seconds', iter - 1, toc)
+			fprintf('SSI  iter: %d  elapsed time: %.4f seconds\n', iter - 1, toc)
 
 			switch nargout
 			case 1
@@ -499,8 +502,8 @@ classdef Neurons
 
 				% pseries@gatsby.ucl.ac.uk  2/20/2005
 
-				%phi = repmat(deg2rad(double(obj.preferredStimulus)) [1 stim.n]);
-				%phi_stim = repmat(deg2rad(double(stim.ensemble)) [obj.popSize 1]);
+				%phi = repmat(degToRad(double(obj.preferredStimulus)) [1 stim.n]);
+				%phi_stim = repmat(degToRad(double(stim.ensemble)) [obj.popSize 1]);
 				%x = phi - phi_stim; % in radians, phi_stim is the orientation of the stimulus
 
 				% ==============================================================
@@ -514,7 +517,8 @@ classdef Neurons
 				g0 = f_prime ./ f;
 				%h0 = f_prime ./ (f.^obj.alpha);
 
-				%g0_tilda= ifftshift(abs(ifft(g0)));  % and Fourier tranforms
+				%g0_tilda= ifftshift(abs(ifft(g0)));  % and Fourier
+				%tranforms
 				%h0_tilda_square= conj(ifftshift(ifft(h0))).*ifftshift(ifft(h0));
 				%g0_tilda_square= conj(ifftshift(ifft(g0))).*ifftshift(ifft(g0));
 
@@ -526,17 +530,19 @@ classdef Neurons
 				fCell = squeeze(mat2cell(f, obj.popSize, ones(stim.n, 1)));
 				f_primeCell = squeeze(mat2cell(f_prime, obj.popSize, ones(stim.n, 1)));
 				g0Cell = squeeze(mat2cell(g0, obj.popSize, ones(stim.n, 1)));
-				QCell1 = Q(obj, fCell);
+				QCell1 = obj.Q(fCell);
 				Q_inv = cellfun(@inv, QCell1, 'UniformOutput', false); % inverse
 				k = repmat({obj.a(ones(obj.popSize,1))}, [1 stim.n]);
 				k_prime = repmat({zeros(obj.popSize,1)}, [1, stim.n]);
-				Q_prime = cellfun(@(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
+				
+				fQ_prime = @(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q;
+				Q_prime = cellfun(fQ_prime, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
 
-				%d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
-				%d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
-				%D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
-				%D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
-				%J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
+				d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
+				d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
+				D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
+				D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
+				J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
 
 				% ==============================================================
 				% Fisher Information
@@ -609,7 +615,7 @@ classdef Neurons
 				lastFI = delta;
 
 				while max(delta) > tol
-					fprintf('FI iter: %d mean delta: %.8f max delta: %.8f', iter, mean(delta), max(delta))
+					fprintf('FI iter: %d mean delta: %.8f max delta: %.8f\n', iter, mean(delta), max(delta))
 
 					switch method
 					case 'randMC'
@@ -690,9 +696,9 @@ classdef Neurons
 			end
 		end
 		
-		function f = margFisher(obj, nMarg, method, stim, tol, varargin)
+		function varargout = margFisher(obj, nMarg, method, stim, tol, varargin)
 			if isempty(varargin)
-				option = 'diff';
+				option = 'raw';
 			else
 				option = varargin{1};
 			end
@@ -712,24 +718,24 @@ classdef Neurons
 			
 			switch option
 			case 'diff'
-				f = fullFisher - remainderFisher;
+				varargout = {fullFisher - remainderFisher};
 			case 'rootDiff'
-				f = sqrt(fullFisher - remainderFisher);
+				varargout = {sqrt(fullFisher - remainderFisher)};
 			case 'diffRoot'
-				f = sqrt(fullFisher) - sqrt(remainderFisher);
+				varargout = {sqrt(fullFisher) - sqrt(remainderFisher)};
 			case 'invDiffInv'
-				f = fullFisher .* remainderFisher ./ (remainderFisher - fullFisher);
+				varargout = {fullFisher .* remainderFisher ./ (remainderFisher - fullFisher)};
 			case 'diffSD'
-				f = (fullFisher.^-0.5 - remainderFisher.^-0.5).^-2;
+				varargout = {(fullFisher.^-0.5 - remainderFisher.^-0.5).^-2};
 			case 'raw'
-				f = [fullFisher ; remainderFisher];
+				varargout = {fullFisher remainderFisher};
 			otherwise
 				error('Invalid marginal fisher option')
 			end
 		end
 		
 		function ifish = Ifisher(obj, stim)
-			ifish = stim.entropy - sum(stim.pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ (fisher(obj, 'analytic', stim, 0))));
+			ifish = stim.entropy - sum(stim.pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ obj.fisher('analytic', stim, 0)));
 		end
 		
 		function ifish = mIfisher(obj, nMarg, stim)
@@ -743,13 +749,8 @@ classdef Neurons
 			ifish = ifishTotal - ifishRem;
 		end
 		
-		function ssif = SSIfisher(obj, fisherMethod, stim, tol)
-			% sigma(s)
-			% Compute SD of optimal estimator as a function of the stimulus
-			sigma = fisher(obj, fisherMethod, stim, tol) .^ -0.5;
-			
-			sigmaMat = repmat(sigma, [stim.n 1]);
-			
+		function ssif = SSIfisher(obj, n, fisherMethod, stim, tol)
+		
 			% S stimulus
 			sMat = repmat(stim.ensemble, [stim.n 1]);
 			% sHat stimulus estimate
@@ -768,9 +769,46 @@ classdef Neurons
 				% linear difference
 				dS = sHatMat - sMat;
 			end
+			
+			if ~isempty(n)
+				[fullFI remFI] = obj.margFisher(n, fisherMethod, stim, tol, 'raw');
+				
+				% Compute SSIfisher excluding cells of interest
+				% sigma(s)
+				% Compute SD of optimal estimator as a function of the stimulus
+				sigma = remFI .^ -0.5;
+				sigmaMat = repmat(sigma, [stim.n 1]);
+
+				% p(sHat|S)
+				psHat_s = cellfun(@lsnormpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
+
+				% p(sHat,S)
+				psHats = psHat_s .* psMat + 1e-99;
+				% p(sHat)
+				psHat = sum(psHats, 2);
+				% p(S|sHat)
+				ps_sHat = psHats ./ repmat(psHat, [1 stim.n]);
+
+				% H(s|sHat) as a function of sHat
+				Hs_sHat = -sum(ps_sHat .* log2(ps_sHat), 2);
+
+				% Isp(sHat) specific information
+				isp = stim.entropy - Hs_sHat;
+
+				% SSIfisher
+				ssifRem = sum(psHat_s .* repmat(isp, [1 stim.n]), 1);
+			else
+				fullFI = obj.fisher(fisherMethod, stim, tol);
+			end
+			
+			% Compute SSIfisher for full population
+			% sigma(s)
+			% Compute SD of optimal estimator as a function of the stimulus
+			sigma = fullFI .^ -0.5;
+			sigmaMat = repmat(sigma, [stim.n 1]);
 
 			% p(sHat|S)
-			psHat_s = cellfun(@normpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
+			psHat_s = cellfun(@lsnormpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
 			
 			% p(sHat,S)
 			psHats = psHat_s .* psMat + 1e-99;
@@ -786,26 +824,34 @@ classdef Neurons
 			isp = stim.entropy - Hs_sHat;
 			
 			% SSIfisher
-			ssif = sum(psHat_s .* repmat(isp, [1 stim.n]), 1);
+			ssifFull = sum(psHat_s .* repmat(isp, [1 stim.n]), 1);
+			
+			if ~isempty(n)
+				ssif = ssifFull - ssifRem;
+			else
+				ssif = ssifFull;
+			end
 		end
 		
 		function obj = gainadapt(obj, width, amnt, centre)
-			obj.maxRate = obj.maxRate .* (1 - amnt .* exp(-(1.0 ./ deg2rad(width).^2) .* (1 - cosd(double(obj.preferredStimulus - centre)))));
+			obj.maxRate = obj.maxRate .* (1 - amnt .* exp(-(1.0 ./ degToRad(width).^2) .* (1 - cosd(double(obj.preferredStimulus - centre)))));
 		end
 		
 		function p = pOfR(obj, response, stimulusSet)
-			if ~(isnumeric(response) & isvector(response) & length(response) == obj.popSize)
+			if ~(isnumeric(response) && isvector(response) && length(response) == obj.popSize)
 				error([inputname(2) ' is not a valid response'])
 			end
 
-			if ~(isnumeric(stimulusSet) & size(stimulusSet, 1) == obj.dimensionality)
+			if ~(isnumeric(stimulusSet) && size(stimulusSet, 1) == obj.dimensionality)
 				error([inputname(3) ' is not a valid stimulus set'])
 			end
 
 			r = repmat(reshape(response, length(response), 1), 1, length(stimulusSet));
 			rMean = meanR(obj, stimulusSet);
 			r = r - rMean;
-
+			
+			prob = zeros(1,length(stimulusSet));
+			
 			for s = 1 : length(stimulusSet)
 				Q = obj.varA * obj.varR .* (rMean(:,s) * rMean(:,s)') .^ obj.varAlpha;
 				normFactor = 1.0 / ((2.0 * pi)^(obj.popSize / 2.0) * det(Q)^0.5);
@@ -857,10 +903,10 @@ classdef Neurons
 		function retVal = tcplot(obj, stim)
 			r = meanR(obj, stim);
 			[stims ind] = sort(double(stim.ensemble));
-			plot(stims, r(:,ind))
+			retVal = plot(stims, r(:,ind));
 		end
 		
-		function obj = remove(obj, nMarg)
+		function varargout = remove(obj, nMarg)
 			if ~isempty(nMarg)
 				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
 				margMask = ones(obj.popSize, 1);
@@ -882,16 +928,21 @@ classdef Neurons
 			if length(obj.backgroundRate) > 1
 				obj.backgroundRate = obj.backgroundRate(margMask);
 			end
+			
+			Rmask = logical((margMask+0) * (margMask+0)');
+			obj.R = reshape(obj.R(Rmask), [nMarg nMarg]);
+			
+			switch nargout
+			case 1
+				varargout = {obj};
+			case 2
+				varargout = {obj margMask};
+			otherwise
+				error('Wrong number of outputs')
+			end
+					
 		end
 		
 	end
 
 end
-
-	
-function p = fPofR(n, r, q)
-	p = n .* exp(-0.5 * r' * q * r); % for pre-inverted Q
-end
-
-
-
