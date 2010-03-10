@@ -1,6 +1,6 @@
-function out = degToRad(in)
+function out = radToDeg(in)
 %
 %
 %
 
-out = pi .* in ./ 180;
+out = 180 .* in ./ pi;
