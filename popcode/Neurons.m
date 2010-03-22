@@ -207,7 +207,8 @@ classdef Neurons
 
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
-				pRS = pRgS .* stim.pS' + 1e-99;	
+				% CAUTION: THE ADDITIVE CONST PREVENTS ZERO PROBABILITIES AND CAN BE CRITICAL IF pRgS IS VERY LOW
+				pRS = pRgS .* stim.pS' + 1e-200;
 
 				% P(r)
 				% Calculate marginal by summing over s'
@@ -219,14 +220,14 @@ classdef Neurons
 
 				% MI
 				pRS = pRS(bin);
-				im(iter) = log2(pRS / (pR * pS));
+				im(iter) = log2(pRS ./ (pR .* pS));
 
 				% MI
 				MI = mean(im);
 
 				miBuf(1+mod(iter, 128)) = MI;
 				varBuf = var(miBuf);
-				cont = varBuf > tol & iter < 100000 | iter < 200;
+				cont = varBuf > tol & iter < 100000 | iter < 2000;
 
 				iter = iter + 1;
 			end
@@ -234,10 +235,8 @@ classdef Neurons
 			i = MI;
 		end
 		
-		function varargout = ssi(obj, n, method, stim, tol, maxit)
+		function varargout = ssi(obj, n, method, stim, stimOrds, tol, maxit)
 			tic
-
-			%rand('twister', sum(100 * clock));
 
 			try
 				% Test sanity of indices
@@ -252,6 +251,19 @@ classdef Neurons
 
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
+			end
+			
+			% Create mask for calculating specific stimulus ordinates only
+			if ~isempty(stimOrds)
+				sMask = zeros(stim.n, 1);
+				sMask(stimOrds) = 1;
+				sMaskN = sum(sMask);
+				sMask = logical(sMask);
+				discontinuous = true;
+			else
+				sMask = logical(ones(stim.n, 1));
+				sMaskN = stim.n;
+				discontinuous = false;
 			end
 			
 			% Get mean responses for each stimulus ordinate
@@ -271,9 +283,9 @@ classdef Neurons
 
 			% Replicate cell arrays
 			%invQCell = repmat(invQCell', [1 stim.n]);
-			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
+			cholInvQCell = repmat(cholInvQCell', [1 sMaskN]);
 			%QCell = repmat(QCell1', [1 stim.n]);
-			rMeanCella = repmat(rMeanCell', [1 stim.n]);
+			rMeanCella = repmat(rMeanCell', [1 sMaskN]);
 			
 			if ~isempty(n)
 				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
@@ -298,10 +310,10 @@ classdef Neurons
 				
 				% Replicate cell arrays
 				%invQCellMarg = repmat(invQCellMarg', [1 stim.n]);
-				cholInvQCellMarg = repmat(cholInvQCellMarg', [1 stim.n]);
+				cholInvQCellMarg = repmat(cholInvQCellMarg', [1 sMaskN]);
 				%QCellMarg = repmat(QCellMarg1', [1 stim.n]);
 				
-				rMeanMargCella = repmat(rMeanMargCell', [1 stim.n]);
+				rMeanMargCella = repmat(rMeanMargCell', [1 sMaskN]);
 			end
 			
 			% Define function for multivariate gaussian sampling
@@ -322,25 +334,21 @@ classdef Neurons
 			
 			while cont
 				if ~mod(iter, 10)
-					fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
-					
-					if exist('/tmp/haltnow', 'file')
-						break
+					if ~discontinuous
+						fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
+					else
+						fprintf('SSI  iter: %d  HF power criteria is not used for discontinuous SSI calculations\n', iter)
 					end
 				end
-
-				%if ~mod(iter, 1000)
-				%	whos
-				%end
 
 				switch method
 				case 'randMC'
 					% Sample r from response distribution
 					% Generate vector of independent normal random numbers (mu=0, sigma=1)
-					zCell = mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1));
+					zCell = mat2cell(randn(obj.popSize, sMaskN), obj.popSize, ones(sMaskN, 1));
 					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
 					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO, SEE ABOVE !!!
-					rCella = cellfun(fRand, rMeanCell, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
+					rCella = cellfun(fRand, rMeanCell(sMask), cholQ(sMask), zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
 
 				case 'quasirandMC'
 					% 
@@ -351,11 +359,11 @@ classdef Neurons
 				% Replicate to form a stim.n x stim.n cell array of response vectors
 				rCell = repmat(rCella, [stim.n 1]);
 				% Calculate response probability densities
-				pRgS = cellfun(@lsnormpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n stim.n]));
+				pRgS = cellfun(@lsnormpdf, rCell, rMeanCella, cholInvQCell, repmat({'inv'}, [stim.n sMaskN]));
                 
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
-				pRS = pRgS .* repmat(stim.pS', [1 stim.n]) + 1e-99; % stim'.n x stim
+				pRS = pRgS .* repmat(stim.pS', [1 sMaskN]) + 1e-200; % stim'.n x stim
 
 				% P(r)
 				% Calculate marginal by summing over s'
@@ -397,11 +405,11 @@ classdef Neurons
 					%subMeanR = repmat(subMeanR, stim.n, 1);
 					% Calculate response probability densities
 					%pRgS = cellfun(fPofR, normFactorMarg, subMeanR, QCellMarg); % stim'.n x stim.n
-					pRgS = cellfun(@lsnormpdf, rCellMarg, rMeanMargCella, cholInvQCellMarg, repmat({'inv'}, [stim.n stim.n]));
+					pRgS = cellfun(@lsnormpdf, rCellMarg, rMeanMargCella, cholInvQCellMarg, repmat({'inv'}, [stim.n sMaskN]));
 
 					% P(r,s)
 					% Mutiply P(r|s) and P(s) to find joint distribution
-					pRS = pRgS .* repmat(stim.pS, [stim.n, 1]) + 1e-99; % stim'.n x stim
+					pRS = pRgS .* repmat(stim.pS', [1 sMaskN]) + 1e-200; % stim'.n x stim
 
 					% P(r)
 					% Calculate marginal by summing over s'
@@ -428,15 +436,18 @@ classdef Neurons
 					case 'quasirandMC'
 						remainderSSI = mean(iSPmarg .* pRmarg, 1);
 					end
-
+					
 					SSI = fullSSI - remainderSSI;
 				else
 					SSI = fullSSI;
+					remainderSSI = fullSSI;
 				end
 
-				hfPwrSSI = hfpwr1(SSI);
-
-				if ~mod(iter, 10)
+				% Smoothness measure doesn't work if we are only
+				% calculating selected stimulus ordinates, so run until
+				% iteration limit
+				if ~mod(iter, 10) && ~discontinuous
+					hfPwrSSI = hfpwr1(SSI);
 					cont = hfPwrSSI > tol;
 				else
 					cont = true;
@@ -449,6 +460,11 @@ classdef Neurons
 				if iter >= maxit
 					cont = false;
 					disp('Iteration limit exceeded')
+				end
+				
+				if exist('/tmp/haltnow', 'file')
+					cont = false;
+					disp('Detected /tmp/haltnow, aborting SSI calculation')
 				end
 
 				iter = iter + 1;
@@ -783,7 +799,7 @@ classdef Neurons
 				psHat_s = cellfun(@lsnormpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
 
 				% p(sHat,S)
-				psHats = psHat_s .* psMat + 1e-99;
+				psHats = psHat_s .* psMat + 1e-200;
 				% p(sHat)
 				psHat = sum(psHats, 2);
 				% p(S|sHat)
@@ -811,7 +827,7 @@ classdef Neurons
 			psHat_s = cellfun(@lsnormpdf, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
 			
 			% p(sHat,S)
-			psHats = psHat_s .* psMat + 1e-99;
+			psHats = psHat_s .* psMat + 1e-200;
 			% p(sHat)
 			psHat = sum(psHats, 2);
 			% p(S|sHat)
