@@ -136,7 +136,7 @@ classdef Neurons
 			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
 
 			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-			QCell1 = Q(obj, rMeanCell);
+			QCell1 = obj.Q(rMeanCell);
 
 			% Compute Cholesky decomps of Q matrices
 			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
@@ -208,11 +208,15 @@ classdef Neurons
 				% P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
 				% CAUTION: THE ADDITIVE CONST PREVENTS ZERO PROBABILITIES AND CAN BE CRITICAL IF pRgS IS VERY LOW
-				pRS = pRgS .* stim.pS' + 1e-200;
+				pRS = pRgS .* stim.pS';
 
 				% P(r)
 				% Calculate marginal by summing over s'
-				pR = sum(pRS, 1);
+				pR = sum(pRS, 1) + 1e-200;
+				
+				if min(pR) < (100 * 1e-200)
+					fprintf('MI: Warning: results affected by additive const')
+				end
 
 				% P(s)
 				pS = stim.pS;
@@ -618,6 +622,10 @@ classdef Neurons
 				% Calculate marginal by summing over s'
 				% Need to keep this for each sample for the final summation
 				pR(iter,:) = sum(pRS, 1);
+				
+				if min(pR(iter,:)) < (100 .* 1e-200 .* stim.n)
+					fprintf('SSI: Warning: results affected by additive const')
+				end
 
 				% P(s'|r)
 				% Divide joint by marginal P(r)
