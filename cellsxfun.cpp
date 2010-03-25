@@ -1,12 +1,23 @@
 //
 // cellsxfun.cpp
-// (C) Stuart Yarrow 2010/03/24 (s.yarrow@ed.ac.uk)
+// Copyright Stuart Yarrow 2010/03/24 (s.yarrow@ed.ac.uk)
 // All rights reserved.
-// This file is provided as is, subject to Gnu Public License version 3
 //
-// You have permission to modify this program for your non-commercial usage.
-// You don't have any authorization to use this alogithm in any commercial products. 
-
+// Based on mAryCellFcn.ccp by Michael Brost (michaelbrost@yahoo.com).
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
 
 
 #include "mex.h"
@@ -32,10 +43,25 @@ void usage(void)
     mexPrintf("|       out = cellsxfun(@plus, x, y, z);                2 x 3 cell array                                               |\n");
     mexPrintf("|                                                                                                                      |\n");
     mexPrintf("|       Each argument is treated as if singleton dimensions are replicated to the size of the output.                  |\n");
-    mexPrintf("|                                                                                                                      |\n");    
-    mexPrintf("| NOTE: there were limited opportunities to trap errors. I suggest that you defensively program your functions.        |\n");    
-    mexPrintf("|       Anonymous function handles are supported.                                                                      |\n");    
-    mexPrintf("|                                                                                                                      |\n");    
+    mexPrintf("|                                                                                                                      |\n");
+    mexPrintf("| NOTE: there were limited opportunities to trap errors. I suggest that you defensively program your functions.        |\n");
+    mexPrintf("|       Anonymous function handles are supported.                                                                      |\n");
+    mexPrintf("|                                                                                                                      |\n");
+    mexPrintf("| Copyright Stuart Yarrow 2010/03/24 (s.yarrow@ed.ac.uk)                                                               |\n");
+    mexPrintf("| Based on mAryCellFcn.ccp by Michael Brost (michaelbrost@yahoo.com)                                                   |\n");
+    mexPrintf("|                                                                                                                      |\n");
+    mexPrintf("| This program is free software: you can redistribute it and/or modify                                                 |\n");
+    mexPrintf("| it under the terms of the GNU General Public License as published by                                                 |\n");
+    mexPrintf("| the Free Software Foundation, either version 3 of the License, or                                                    |\n");
+    mexPrintf("| (at your option) any later version.                                                                                  |\n");
+    mexPrintf("|                                                                                                                      |\n");
+    mexPrintf("| This program is distributed in the hope that it will be useful,                                                      |\n");
+    mexPrintf("| but WITHOUT ANY WARRANTY; without even the implied warranty of                                                       |\n");
+    mexPrintf("| MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                                                        |\n");
+    mexPrintf("| GNU General Public License for more details.                                                                         |\n");
+    mexPrintf("|                                                                                                                      |\n");
+    mexPrintf("| You should have received a copy of the GNU General Public License                                                    |\n");
+    mexPrintf("| along with this program.  If not, see <http://www.gnu.org/licenses/>.                                                |\n");
     mexPrintf("========================================================================================================================\n");
 }
 
@@ -176,7 +202,6 @@ void mexFunction( int nOutArgs, mxArray *outPtr[], int nInArgs, const mxArray *i
             // get the contents of the input cell arrays as determined by
             // the vector counter's contents
             mwIndex inputIndex = mxCalcSingleSubscript(inPtr[vIndex+1], nDim, workVec);
-assert(inputIndex < mxGetNumberOfElements(inPtr[vIndex+1]));
             dataPtrArray[vIndex+1] = mxGetCell(inPtr[vIndex+1], inputIndex);
             
             // if the cell array was not initialized correctly, the return pointer
@@ -190,7 +215,6 @@ assert(inputIndex < mxGetNumberOfElements(inPtr[vIndex+1]));
         
         // calculate the offset to the output cell to update
         mwIndex index = mxCalcSingleSubscript(outPtr[0], nDim, thisVec);
-assert(index < mxGetNumberOfElements(outPtr[0]));
         
         // invoke the user's function here - accept only one output and discrard the others
         int status = false;
