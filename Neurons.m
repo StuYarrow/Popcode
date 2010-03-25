@@ -239,10 +239,17 @@ classdef Neurons
 			tic
 
 			try
-				% Test sanity of indices
+				% Test sanity of neuron indices
 				obj.preferredStimulus(n);
 			catch err
 				error([inputname(2) ' is not a valid neuron index'])
+			end
+			
+			try
+				% Test sanity of stimulus ordinate indices
+				stim.ensemble(stimOrds);
+			catch err
+				error([inputname(5) ' is not a valid stimulus ordinate index'])
 			end
 
 			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
@@ -255,15 +262,14 @@ classdef Neurons
 			
 			% Create mask for calculating specific stimulus ordinates only
 			if ~isempty(stimOrds)
-				sMask = zeros(stim.n, 1);
-				sMask(stimOrds) = 1;
-				sMaskN = sum(sMask);
-				sMask = logical(sMask);
-				discontinuous = true;
+				sMask = false(stim.n, 1);
+				sMask(stimOrds) = true;
+				sMaskN = sum(sMask + 0);
+				continuous = false;
 			else
-				sMask = logical(ones(stim.n, 1));
+				sMask = true(stim.n, 1);
 				sMaskN = stim.n;
-				discontinuous = false;
+				continuous = true;
 			end
 			
 			% Get mean responses for each stimulus ordinate
@@ -334,7 +340,7 @@ classdef Neurons
 			
 			while cont
 				if ~mod(iter, 10)
-					if ~discontinuous
+					if continuous
 						fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
 					else
 						fprintf('SSI  iter: %d  HF power criteria is not used for discontinuous SSI calculations\n', iter)
@@ -373,7 +379,7 @@ classdef Neurons
 				% P(s'|r)
 				% Divide joint by marginal P(r)
 				pSgR = pRS ./ repmat(pR(iter,:), [stim.n 1]);
-
+					
 				% H(s'|r)
 				hSgR = -sum(pSgR .* log2(pSgR), 1);
 
@@ -446,7 +452,7 @@ classdef Neurons
 				% Smoothness measure doesn't work if we are only
 				% calculating selected stimulus ordinates, so run until
 				% iteration limit
-				if ~mod(iter, 10) && ~discontinuous
+				if ~mod(iter, 10) && continuous
 					hfPwrSSI = hfpwr1(SSI);
 					cont = hfPwrSSI > tol;
 				else
@@ -486,6 +492,243 @@ classdef Neurons
 			end
 		end
 
+		function varargout = ssi2(obj, n, method, stim, stimOrds, tol, maxit)
+			tic
+
+			try
+				% Test sanity of neuron indices
+				obj.preferredStimulus(n);
+			catch err
+				error([inputname(2) ' is not a valid neuron index'])
+			end
+			
+			try
+				% Test sanity of stimulus ordinate indices
+				stim.ensemble(stimOrds);
+			catch err
+				error([inputname(5) ' is not a valid stimulus ordinate index'])
+			end
+			
+			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
+				error([method ' is not a valid SSI calculation method'])
+			end
+
+			if ~isa(stim, 'StimulusEnsemble')
+				error([inputname(4) ' is not a SimulusEnsemble object'])
+			end
+			
+			% Create mask for calculating specific stimulus ordinates only
+			if ~isempty(stimOrds)
+				sMask = false(stim.n, 1);
+				sMask(stimOrds) = true;
+				sMaskN = sum(sMask + 0);
+				continuous = false;
+			else
+				sMask = true(stim.n, 1);
+				sMaskN = stim.n;
+				continuous = true;
+			end
+			
+			% Get mean responses for each stimulus ordinate
+			% obj.popSize x stim.n
+			rMean = obj.integrationTime .* meanR(obj, stim);
+			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+
+			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+			QCell1 = obj.Q(rMeanCell);
+
+			% Compute Cholesky decomps of Q matrices
+			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+
+			% Invert Q matrices and compute Cholesky decomps
+			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
+			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
+			
+			if ~isempty(n)
+				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
+				margMask = ones(obj.popSize, 1);
+				margMask(n) = false;
+				% Number of remaining neurons
+				%nMarg = sum(margMask);
+				margMask = logical(margMask);
+				
+				% Get mean responses for each stimulus ordinate
+				rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
+				
+				% Compute mean response dependent cov matrix stack Q
+				QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
+				
+				% Compute Cholesky decomps of Q matrices
+				%cholQMarg = cellfun(@(q) chol(q)', QCellMarg1, 'UniformOutput', false);
+				
+				% Invert Q matrices and compute Cholesky decomps
+				invQCellMarg = cellfun(@inv, QCellMarg1, 'UniformOutput', false);
+				cholInvQCellMarg = cellfun(@chol, invQCellMarg, 'UniformOutput', false);
+			end
+			
+			% Define function for multivariate gaussian sampling
+			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+			% Comment as appropriate if you want to truncate at zero
+			% This will mess up the Gaussianity
+			%fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+			fRand = @(m, c, z) m + c * z; % don't truncate
+
+			% Define multivariate Gaussian pdf
+			% Don't need this as we are using Lightspeed lsnormpdf
+			%fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
+			%fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
+
+			iter = 1;
+			cont = true;
+			hfPwrSSI = 0;
+			
+			while cont
+				if ~mod(iter, 10)
+					if continuous
+						fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
+					else
+						fprintf('SSI  iter: %d  smoothness criterion is not used for discontinuous SSI calculations\n', iter)
+					end
+				end
+
+				switch method
+				case 'randMC'
+					% Sample r from response distribution
+					% Generate vector of independent normal random numbers (mu=0, sigma=1)
+					zCell = mat2cell(randn(obj.popSize, sMaskN), obj.popSize, ones(sMaskN, 1));
+					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO, SEE ABOVE !!!
+					rCell = cellfun(fRand, rMeanCell(sMask), cholQ(sMask), zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
+
+				case 'quasirandMC'
+					% 
+
+				end
+
+				% P(r|s')
+				% Calculate response probability densities
+				pRgS = cell2mat(cellsxfun(@lsnormpdf, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                
+				% P(r,s')
+				% Mutiply P(r|s) and P(s) to find joint distribution
+				%pRS = pRgS .* repmat(stim.pS', [1 sMaskN]) + 1e-200; % stim'.n x stim
+				pRS = bsxfun(@times, pRgS, stim.pS') + 1e-200; % stim'.n x stim
+
+				% P(r)
+				% Calculate marginal by summing over s'
+				% Need to keep this for each sample for the final summation
+				pR(iter,:) = sum(pRS, 1);
+
+				% P(s'|r)
+				% Divide joint by marginal P(r)
+				%pSgR = pRS ./ repmat(pR(iter,:), [stim.n 1]);
+				pSgR = bsxfun(@rdivide, pRS, pR(iter,:));
+
+				% H(s'|r)
+				hSgR = -sum(pSgR .* log2(pSgR), 1);
+
+				% Isp(r)
+				% Specific information; reduction in stimulus entropy due to observation of r
+				iSP(iter,:) = stim.entropy - hSgR;
+
+				% Issi(s)
+				% SSI; average of Isp over all r samples
+				% If using quasi-random sampling, need to factor in P(r) here
+				switch method
+				case 'randMC'
+					fullSSI = mean(iSP, 1);
+				case 'quasirandMC'
+					fullSSI = mean(iSP .* pR, 1);
+				end
+
+				if exist('margMask', 'var')
+					% If we are calculating a marginal SSI, compute the SSI for remaining neurons
+
+					% Mask out neurons of interest in response vectors
+					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
+
+					% P(r|s)
+					pRgS = cell2mat(cellsxfun(@lsnormpdf, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+
+					% P(r,s)
+					% Mutiply P(r|s) and P(s) to find joint distribution
+					pRS = bsxfun(@times, pRgS, stim.pS') + 1e-200; % stim'.n x stim
+
+					% P(r)
+					% Calculate marginal by summing over s'
+					% Need to keep this for each sample for the final summation
+					pRmarg(iter,:) = sum(pRS, 1);
+
+					% P(s|r)
+					% Divide joint by marginal P(r)
+					pSgR = bsxfun(@rdivide, pRS, pRmarg(iter,:));
+
+					% H(s|r)
+					hSgR = -sum(pSgR .* log2(pSgR), 1);
+
+					% Isp(r)
+					% Specific information; reduction in stimulus entropy due to observation of r
+					iSPmarg(iter,:) = stim.entropy - hSgR;
+
+					% Issi(s)
+					% SSI; average of Isp over all r samples
+					% If using QR sampling, need to factor in P(r) here
+					switch method
+					case 'randMC'
+						remainderSSI = mean(iSPmarg, 1);
+					case 'quasirandMC'
+						remainderSSI = mean(iSPmarg .* pRmarg, 1);
+					end
+					
+					SSI = fullSSI - remainderSSI;
+				else
+					SSI = fullSSI;
+					remainderSSI = fullSSI;
+				end
+
+				% Smoothness measure doesn't work if we are only
+				% calculating selected stimulus ordinates, so run until
+				% iteration limit
+				if ~mod(iter, 10) && continuous
+					hfPwrSSI = hfpwr1(SSI);
+					cont = hfPwrSSI > tol;
+				else
+					cont = true;
+				end
+
+				if iter < 100
+					cont = true;
+				end
+
+				if iter >= maxit
+					cont = false;
+					disp('Iteration limit exceeded')
+				end
+				
+				if exist('/tmp/haltnow', 'file')
+					cont = false;
+					disp('Detected /tmp/haltnow, aborting SSI calculation')
+				end
+
+				iter = iter + 1;
+			end
+
+			%save(['/tmp/ssi_' datestr(now, 'yyyymmddHHMMSS')])
+
+			fprintf('SSI  iter: %d  elapsed time: %.4f seconds\n', iter - 1, toc)
+
+			switch nargout
+			case 1
+				varargout = {SSI};
+			case 2
+				varargout = {SSI (iter - 1)};
+			case 3
+				varargout = {fullSSI remainderSSI (iter - 1)};
+			otherwise
+				error('Wrong number of outputs')
+			end
+		end
+		
 		function varargout = fisher(obj, method, stim, tol)
 			
 			if ~isa(stim, 'StimulusEnsemble')
