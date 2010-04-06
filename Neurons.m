@@ -169,13 +169,15 @@ classdef Neurons
 			%fPofR = @(nor, res, q) nor .* exp(-0.5 * res' * q * res); % for pre-inverted Q
 
 			iter = 1;
-			miBuf = rand(128,1);
+			miBuf = rand(100,1);
 			varBuf = 0;
 			cont = true;
+			im = 0;
+			MI = 0;
 
 			while cont
 				if ~mod(iter, 100)
-					fprintf('MI  iter: %d  var: %.4e\n', iter, varBuf)
+					fprintf('MI  iter: %d  val: %.2g  var: %.4e\n', iter, MI, varBuf)
 				end
 
 				switch method
@@ -194,42 +196,32 @@ classdef Neurons
 					r = fRand(rMeanCell{bin}, cholQ{bin}, z);
 				end
 
-				% P(r|s)
-				% Subtract out the mean responses
-				%subMeanR = cellfun(@minus, rCell, rMeanCell, 'UniformOutput', false);
+				% log P(r|s)
 				% Replicate to form a stim.n x stim.n cell array of response vectors
-				%subMeanR = repmat(subMeanR, stim.n, 1);
 				rCell = repmat({r}, [stim.n 1]);
-				% Calculate response probability densities
-				%pRgS = cellfun(fPofR, normFactor, subMeanR, invQCell); % stim'.n x stim.n
-				%pRgS = cellfun(@mvnpdf, rCell, rMeanCella, QCell);
-				pRgS = cellfun(@lsnormpdf, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
+				% Calculate response log probability densities
+				lpRgS = cellfun(@normpdfln, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
 
-				% P(r,s')
+				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
-				% CAUTION: THE ADDITIVE CONST PREVENTS ZERO PROBABILITIES AND CAN BE CRITICAL IF pRgS IS VERY LOW
-				pRS = pRgS .* stim.pS';
-
-				% P(r)
-				% Calculate marginal by summing over s'
-				pR = sum(pRS, 1) + 1e-200;
-				
-				if min(pR) < (100 * 1e-200)
-					fprintf('MI: Warning: results affected by additive const')
-				end
-
-				% P(s)
 				pS = stim.pS;
-				pS = pS(bin);
+				lpRS = lpRgS + log(pS');
+
+				% log P(r)
+				% Calculate marginal by summing over s'
+				lpR = log(sum(exp(lpRS), 1));
+				
+				% log P(s)
+				lpS = log(pS(bin));
+
+				% MI in bits (convert from log_e to log_2)
+				lpRS = lpRS(bin);
+				im = im + (lpRS - (lpR + lpS)) ./ log(2);
 
 				% MI
-				pRS = pRS(bin);
-				im(iter) = log2(pRS ./ (pR .* pS));
+				MI = im / iter;
 
-				% MI
-				MI = mean(im);
-
-				miBuf(1+mod(iter, 128)) = MI;
+				miBuf(1+mod(iter, 100)) = MI;
 				varBuf = var(miBuf);
 				cont = varBuf > tol & iter < 100000 | iter < 2000;
 
@@ -238,6 +230,7 @@ classdef Neurons
 
 			i = MI;
 		end
+
 		
 		function varargout = ssi(obj, n, method, stim, stimOrds, tol, maxit)
 			tic
