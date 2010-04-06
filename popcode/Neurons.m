@@ -231,7 +231,6 @@ classdef Neurons
 			i = MI;
 		end
 
-		
 		function varargout = ssi(obj, n, method, stim, stimOrds, tol, maxit)
 			tic
 
@@ -578,10 +577,13 @@ classdef Neurons
 			iter = 1;
 			cont = true;
 			hfPwrSSI = 0;
+			iSP = zeros(1, sMaskN);
+			iSPmarg = iSP;
 			
 			while cont
 				if ~mod(iter, 10)
 					if continuous
+						hfPwrSSI = hfpwr1(SSI);
 						fprintf('SSI  iter: %d  HF power: %.4e\n', iter, hfPwrSSI)
 					else
 						fprintf('SSI  iter: %d  smoothness criterion is not used for discontinuous SSI calculations\n', iter)
@@ -602,96 +604,74 @@ classdef Neurons
 
 				end
 
-				% P(r|s')
+				% log P(r|s')
 				% Calculate response probability densities
-				pRgS = cell2mat(cellsxfun(@lsnormpdf, rCell, rMeanCell', cholInvQCell', {'inv'}));
+				lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
                 
-				% P(r,s')
+				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
-				%pRS = pRgS .* repmat(stim.pS', [1 sMaskN]) + 1e-200; % stim'.n x stim
-				pRS = bsxfun(@times, pRgS, stim.pS') + 1e-200; % stim'.n x stim
+				lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
 
-				% P(r)
+				% log P(r)
 				% Calculate marginal by summing over s'
-				% Need to keep this for each sample for the final summation
-				pR(iter,:) = sum(pRS, 1);
+				lpR = log(sum(exp(lpRS), 1));
 				
-				if min(pR(iter,:)) < (100 .* 1e-200 .* stim.n)
-					fprintf('SSI: Warning: results affected by additive const')
-				end
-
-				% P(s'|r)
+				% log P(s'|r)
 				% Divide joint by marginal P(r)
-				%pSgR = pRS ./ repmat(pR(iter,:), [stim.n 1]);
-				pSgR = bsxfun(@rdivide, pRS, pR(iter,:));
+				lpSgR = bsxfun(@minus, lpRS, lpR);
 
-				% H(s'|r)
-				hSgR = -sum(pSgR .* log2(pSgR), 1);
+				% H(s'|r), in bits, converting from log_e to log_2
+				hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
 
-				% Isp(r)
+				% Accumulate Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
-				iSP(iter,:) = stim.entropy - hSgR;
-
+				iSP = iSP + stim.entropy - hSgR;
+				
 				% Issi(s)
 				% SSI; average of Isp over all r samples
-				% If using quasi-random sampling, need to factor in P(r) here
-				switch method
-				case 'randMC'
-					fullSSI = mean(iSP, 1);
-				case 'quasirandMC'
-					fullSSI = mean(iSP .* pR, 1);
-				end
-
+				fullSSI = iSP ./ iter;
+				
 				if exist('margMask', 'var')
 					% If we are calculating a marginal SSI, compute the SSI for remaining neurons
 
 					% Mask out neurons of interest in response vectors
 					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
 
-					% P(r|s)
-					pRgS = cell2mat(cellsxfun(@lsnormpdf, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+					% log P(r|s)
+					lpRgS = cell2mat(cellsxfun(@normpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
 
-					% P(r,s)
-					% Mutiply P(r|s) and P(s) to find joint distribution
-					pRS = bsxfun(@times, pRgS, stim.pS') + 1e-200; % stim'.n x stim
+					% log P(r,s)
+					% Multiply P(r|s) and P(s) to find joint distribution
+					lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
 
-					% P(r)
+					% log P(r)
 					% Calculate marginal by summing over s'
-					% Need to keep this for each sample for the final summation
-					pRmarg(iter,:) = sum(pRS, 1);
+					lpR = log(sum(exp(lpRS), 1));
 
-					% P(s|r)
+					% log P(s|r)
 					% Divide joint by marginal P(r)
-					pSgR = bsxfun(@rdivide, pRS, pRmarg(iter,:));
+					lpSgR = bsxfun(@minus, lpRS, lpR);
 
-					% H(s|r)
-					hSgR = -sum(pSgR .* log2(pSgR), 1);
+					% H(s|r), in bits, converting from log_e to log_2
+					hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
 
 					% Isp(r)
 					% Specific information; reduction in stimulus entropy due to observation of r
-					iSPmarg(iter,:) = stim.entropy - hSgR;
+					iSPmarg = iSPmarg + stim.entropy - hSgR;
 
 					% Issi(s)
 					% SSI; average of Isp over all r samples
-					% If using QR sampling, need to factor in P(r) here
-					switch method
-					case 'randMC'
-						remainderSSI = mean(iSPmarg, 1);
-					case 'quasirandMC'
-						remainderSSI = mean(iSPmarg .* pRmarg, 1);
-					end
-					
+					remainderSSI = iSPmarg ./ iter;
 					SSI = fullSSI - remainderSSI;
 				else
-					SSI = fullSSI;
 					remainderSSI = fullSSI;
+					SSI = fullSSI;
 				end
 
 				% Smoothness measure doesn't work if we are only
 				% calculating selected stimulus ordinates, so run until
 				% iteration limit
 				if ~mod(iter, 10) && continuous
-					hfPwrSSI = hfpwr1(SSI);
 					cont = hfPwrSSI > tol;
 				else
 					cont = true;
