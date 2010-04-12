@@ -113,6 +113,12 @@ classdef Neurons
 					prefDiff = prefDiff - prefDiff.';
 					obj.R = c .* exp((cosd(double(prefDiff)) - 1) .* beta) .* ~eye(obj.popSize) + eye(obj.popSize);
 					obj.add = 0.0;
+				case 'cercal'
+					obj.distribution = 'Gaussian';
+					obj.add = varargin{7}(1);
+					obj.a = varargin{7}(2);
+					obj.alpha = 0.5;
+					obj.R = eye(obj.popSize);
 				otherwise
 					error([varargin{6} ' is not a valid variability regime'])
 				end
@@ -901,7 +907,7 @@ classdef Neurons
 			otherwise
 				error('Wrong number of outputs')
 			end
-		end
+		end                                                                  
 		
 		function varargout = fisher(obj, method, stim, tol)
 			
@@ -995,7 +1001,7 @@ classdef Neurons
 				Info(5,:) = Info(1,:) + Info(3,:);                         % Fisher
 				%Info(6) = 0.5 * d_prime * inv(J) * d_prime';             % second term of I_sqe
 
-				Info = Info * (pi^2) / (180.^2); % convert to degrees ^-2
+				%Info = Info * (pi^2) / (180.^2); % convert to degrees ^-2
 				%fprintf('\n.. I_mean : %.5f \n.. I_mean_ind : %.5f \n.. I_cov : %.5f \n.. I_cov_ind : %.5f \n.. I_tot : %.5f\n\n', Info(1), Info(2), Info(3), Info(4), Info(5));
 				%fprintf('I_SQE : %.5f\n\n', Info(1)+Info(6));
 
@@ -1295,11 +1301,13 @@ classdef Neurons
 		end
 		
 		function q = Q(obj, resp)
-			if obj.add == 0
-				q = cellfun(@(r) obj.a .* obj.R .* (r * r').^obj.alpha, resp, 'UniformOutput', false);
-			else
-				q = cellfun(@(r) (obj.add + obj.a .* obj.R .* (r * r').^obj.alpha).^2, resp, 'UniformOutput', false);
-			end
+			%if obj.add == 0
+			%	q = cellfun(@(r) obj.a .* obj.R .* (r * r').^obj.alpha, resp, 'UniformOutput', false);
+			%else
+			%	q = cellfun(@(r) (obj.add + obj.a .* obj.R .* (r * r').^obj.alpha).^2, resp, 'UniformOutput', false);
+			%end
+			
+			q = cellfun(@(r) obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha, resp, 'UniformOutput', false);
 		end
 		
 		function retStr = char(obj)
