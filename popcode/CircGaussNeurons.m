@@ -79,10 +79,7 @@ classdef CircGaussNeurons < Neurons
 			width = repmat(obj.width, 1, stim.n);
 			beta = 1.0 ./ degToRad(width).^2;
 
-			dr = -maxRate .* exp(-beta) .* beta .* sind(double(stims - centre)) .* exp(beta .* cosd(double(stims - centre)));
-			% Would be better to modify this to return the derivative in
-			% spikes/s/deg and to remove the rad->deg conversion in the
-			% Neurons.fisher() function.
+			dr = pi/180 .* (-maxRate .* exp(-beta) .* beta .* sind(double(stims - centre)) .* exp(beta .* cosd(double(stims - centre))));
 		end
 		
 		function obj = widthadapt(obj, width, amnt, centre)
