@@ -461,7 +461,7 @@ classdef Neurons
 			end
 		end
 		
-		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxit)
+		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxit, cont)
 			tic
 
 			try
@@ -486,16 +486,24 @@ classdef Neurons
 				error([inputname(4) ' is not a SimulusEnsemble object'])
 			end
 			
+			% Should we treat the function as continuous, i.e. can we use smoothness measures?
+			switch lower(cont)
+			case 'cont'
+				continuous = true;
+			case 'disc'
+				continuous = false;
+			otherwise
+				error('Valid options are disc and cont')
+			end
+			
 			% Create mask for calculating specific stimulus ordinates only
 			if ~isempty(stimOrds)
 				sMask = false(stim.n, 1);
 				sMask(stimOrds) = true;
 				sMaskN = sum(sMask + 0);
-				continuous = false;
 			else
 				sMask = true(stim.n, 1);
 				sMaskN = stim.n;
-				continuous = true;
 				stimOrds = 1:stim.n;
 			end
 			
