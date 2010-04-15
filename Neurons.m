@@ -12,6 +12,7 @@ classdef Neurons
 		alpha = 0.5;
 		R = [];
 		add = 0.0;
+		exponent = 1.0;
 	end
 	
 	methods
@@ -119,6 +120,7 @@ classdef Neurons
 					obj.a = varargin{7}(2);
 					obj.alpha = 0.5;
 					obj.R = eye(obj.popSize);
+					obj.exponent = 2.0;
 				otherwise
 					error([varargin{6} ' is not a valid variability regime'])
 				end
@@ -494,6 +496,7 @@ classdef Neurons
 				sMask = true(stim.n, 1);
 				sMaskN = stim.n;
 				continuous = true;
+				stimOrds = 1:stim.n;
 			end
 			
 			% Get mean responses for each stimulus ordinate
@@ -604,7 +607,7 @@ classdef Neurons
 				
 				% log_2( P(r|s) / P(r) )
 				% Accumulate samples
-				acc = acc + (diag(lpRgS)' - lpR) ./ log(2);
+				acc = acc + (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
 				
 				% Issi(s)
 				% SSI; average of Isp over all r samples
@@ -643,7 +646,7 @@ classdef Neurons
 					
 					% log_2( P(r|s) / P(r) )
 					% Accumulate samples
-					accMarg = accMarg + (diag(lpRgS)' - lpR) ./ log(2);
+					accMarg = accMarg + (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
 
 					% Issi(s)
 					% SSI; average of Isp over all r samples
@@ -977,11 +980,11 @@ classdef Neurons
 				fQ_prime = @(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q;
 				Q_prime = cellfun(fQ_prime, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
 
-				d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
-				d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
-				D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
-				D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
-				J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
+				%d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
+				%d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
+				%D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
+				%D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
+				%J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
 
 				% ==============================================================
 				% Fisher Information
@@ -1307,7 +1310,7 @@ classdef Neurons
 			%	q = cellfun(@(r) (obj.add + obj.a .* obj.R .* (r * r').^obj.alpha).^2, resp, 'UniformOutput', false);
 			%end
 			
-			q = cellfun(@(r) obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha, resp, 'UniformOutput', false);
+			q = cellfun(@(r) (obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha).^obj.exponent, resp, 'UniformOutput', false);
 		end
 		
 		function retStr = char(obj)
