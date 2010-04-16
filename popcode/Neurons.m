@@ -572,7 +572,7 @@ classdef Neurons
 						hfPwrIsur = hfpwr1(Isur);
 						fprintf('SSISS iter: %d  HF power: %.4e %.4e\n', iter, hfPwrSSI, hfPwrIsur)
 					else
-						fprintf('SSISS iter: %d  smoothness criterion is not used for discontinuous calculations\n', iter)
+						fprintf('SSISS iter: %d of %d\n', iter, maxit)
 					end
 				end
 
