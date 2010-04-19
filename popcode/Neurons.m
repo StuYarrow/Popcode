@@ -217,7 +217,7 @@ classdef Neurons
 
 				% log P(r)
 				% Calculate marginal by summing over s'
-				lpR = log(sum(exp(lpRS), 1));
+				lpR = logsumexp(lpRS);
 				
 				% log P(s)
 				lpS = log(pS(bin));
@@ -365,7 +365,7 @@ classdef Neurons
 
 				% log P(r)
 				% Calculate marginal by summing over s'
-				lpR = log(sum(exp(lpRS), 1));
+				lpR = logsumexp(lpRS);
 				
 				% log P(s'|r)
 				% Divide joint by marginal P(r)
@@ -397,7 +397,7 @@ classdef Neurons
 
 					% log P(r)
 					% Calculate marginal by summing over s'
-					lpR = log(sum(exp(lpRS), 1));
+					lpR = logsumexp(lpRS);
 
 					% log P(s|r)
 					% Divide joint by marginal P(r)
@@ -600,7 +600,7 @@ classdef Neurons
 
 				% log P(r)
 				% Calculate marginal by summing over s'
-				lpR = log(sum(exp(lpRS), 1));
+				lpR = logsumexp(lpRS);
 				
 				% log P(s'|r)
 				% Divide joint by marginal P(r)
@@ -639,7 +639,7 @@ classdef Neurons
 
 					% log P(r)
 					% Calculate marginal by summing over s'
-					lpR = log(sum(exp(lpRS), 1));
+					lpR = logsumexp(lpRS);
 
 					% log P(s|r)
 					% Divide joint by marginal P(r)
@@ -840,7 +840,7 @@ classdef Neurons
 
 				% log P(r)
 				% Calculate marginal by summing over s'
-				lpR = log(sum(exp(lpRS), 1));
+				lpR = logsumexp(lpRS);
 				
 				% log_2( P(r|s) / P(r) )
 				% Accumulate samples
@@ -865,7 +865,7 @@ classdef Neurons
 
 					% log P(r)
 					% Calculate marginal by summing over s'
-					lpR = log(sum(exp(lpRS), 1));
+					lpR = logsumexp(lpRS);
 					
 					% log_2( P(r|s) / P(r) )
 					% Accumulate samples
