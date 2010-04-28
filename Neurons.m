@@ -451,6 +451,12 @@ classdef Neurons
 					cont = false;
 					disp('Detected /tmp/haltnow, aborting calculation')
 				end
+				
+				% Halt before eddie kills the job
+				if (toc / 3600.0) > 47.75
+					cont = false;
+					disp('Runtime approaching 48 hrs, halting calculation')
+				end
 
 				iter = iter + 1;
 			end
@@ -736,7 +742,17 @@ classdef Neurons
 		end
 		
 		function ifish = Ifisher(obj, stim)
-			ifish = stim.entropy - sum(stim.pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ obj.fisher('analytic', stim, 0)));
+			fish = obj.fisher('analytic', stim, 0);
+			pS = stim.pS;
+			zOrds = find(fish == 0);
+			
+			if ~isempty(zOrds)
+				fish(zOrds) = [];
+				pS(zOrds) = [];
+				pS = pS ./ sum(pS);
+			end
+			
+			ifish = stim.entropy - sum(pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ fish));
 		end
 		
 		function ifish = mIfisher(obj, nMarg, stim)
