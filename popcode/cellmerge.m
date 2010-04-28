@@ -1,5 +1,15 @@
 function out = cellmerge(varargin)
-    args = {@innermerge, varargin{:}, 'UniformOutput', false}
+	s = size(varargin{1});
+    for arg = 2 : length(varargin)
+        s = max([size(varargin{arg}) ; s], [], 1);
+    end
+	
+	cellarr = cell(size(varargin));
+	for arg = 1 : length(varargin)
+		cellarr{arg} = padcell(varargin{arg}, s);
+	end
+	
+    args = {@innermerge, cellarr{:}, 'UniformOutput', false};
     out = cellfun(args{:});
 end
 

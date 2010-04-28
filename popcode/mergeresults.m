@@ -13,7 +13,7 @@ function varargout = mergeresults(files, vars)
         end
                 
         if iscell(in{1})
-            out(v) = cellmerge(in{:});
+            out(v) = {cellmerge(in{:})};
         elseif isnumeric(in{1})
             out{v} = arraymerge(in{:});
         else
