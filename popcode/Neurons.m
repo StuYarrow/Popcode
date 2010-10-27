@@ -13,6 +13,7 @@ classdef Neurons
 		R = [];
 		add = 0.0;
 		exponent = 1.0;
+		truncate = false;
 	end
 	
 	methods
@@ -31,7 +32,7 @@ classdef Neurons
 
 			%varargin
 			%size(varargin{2})
-		
+                        
 			switch nargin
 			case 7
 				% Standard constructor	
@@ -161,8 +162,12 @@ classdef Neurons
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
 			% Comment as appropriate if you want to truncate at zero
 			% This will mess up the Gaussianity
-			%fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
-			fRand = @(m, c, z) m + c * z; % don't truncate
+			
+			if obj.truncate
+                fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+            else
+                fRand = @(m, c, z) m + c * z; % don't truncate
+            end
 			
 			iter = 1;
 			miBuf = rand(100,1);
@@ -310,8 +315,12 @@ classdef Neurons
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
 			% Comment as appropriate if you want to truncate at zero
 			% This will mess up the Gaussianity
-			%fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
-			fRand = @(m, c, z) m + c * z; % don't truncate
+			
+			if obj.truncate
+                fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+            else
+                fRand = @(m, c, z) m + c * z; % don't truncate
+            end
 			
 			iter = 1;
 			cont = true;
@@ -610,8 +619,12 @@ classdef Neurons
 
 				% Define function for multivariate gaussian sampling
 				% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-				% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
-				fRand = @(m, c, z) max((m + c * z), 0.0);
+                
+				if obj.truncate
+				    fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+				else
+				    fRand = @(m, c, z) m + c * z; % don't truncate
+				end
 
 				% Define multivariate Gaussian pdf
 				fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
