@@ -160,8 +160,6 @@ classdef Neurons
 			
 			% Define function for multivariate gaussian sampling
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-			% Comment as appropriate if you want to truncate at zero
-			% This will mess up the Gaussianity
 			
 			if obj.truncate
                 fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
@@ -486,7 +484,7 @@ classdef Neurons
 			end
 		end
 		
-		function varargout = fisher(obj, method, stim, tol)
+		function varargout = fisher(obj, method, stim, tol, maxit)
 			
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
@@ -630,13 +628,16 @@ classdef Neurons
 				fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
 
 				iter = 1;
-				delta = ones(1, stim.n) * 1e99;
-				deltaBuf = ones(64, stim.n) * 1e99;
-				lastFI = delta;
-
-				while max(delta) > tol
-					fprintf('FI iter: %d mean delta: %.8f max delta: %.8f\n', iter, mean(delta), max(delta))
-
+                cont = true;
+                hfPwrFI = 0;
+                acc = zeros(1, stim.n);
+                
+                while cont
+                    if ~mod(iter, 10)
+                        hfPwrFI = hfpwr1(FI);
+                        fprintf('Fisher iter: %d  HF power: %.4e\n', iter, hfPwrFI)
+                    end
+                    
 					switch method
 					case 'randMC'
 						% Sample r from response distribution
@@ -692,22 +693,45 @@ classdef Neurons
 					dlpRgS = dlpRgS ./ stim.width;
 
 					% (d/ds log2 P(r|s))^2
-					dlpRgS2(iter,:) = dlpRgS.^2; % 1 x stim.n
+					%dlpRgS2(iter,:) = dlpRgS.^2; % 1 x stim.n
+					acc = acc + dlpRgS .^ 2;
 
-					% Issi(s)
-					% SSI; average of Isp over all r samples
-					% If using QR sampling, need to factor in P(r) here
 					switch method
 					case 'randMC'
-						FI = mean(dlpRgS2, 1);
-					case 'quasirandMC'
-						FI = mean(dlpRgS2 .* pRgS, 1);
+						%FI = mean(dlpRgS2, 1);
+						FI = acc ./ iter;
 					end
 
-					deltaBuf(1+mod(iter, 64),:) = abs(lastFI - FI);
-					delta = mean(deltaBuf, 1);
-					lastFI = FI;
-					iter = iter + 1;
+                    % Smoothness measure doesn't work if we are only
+                    % calculating selected stimulus ordinates, so run until
+                    % iteration limit
+                    if ~mod(iter, 10)
+                        cont = hfPwrFI > tol;
+                    else
+                        cont = true;
+                    end
+    
+                    if iter < 100
+                        cont = true;
+                    end
+    
+                    if iter >= maxit
+                        cont = false;
+                        disp('Iteration limit exceeded')
+                    end
+                    
+                    if exist('/tmp/haltnow', 'file')
+                        cont = false;
+                        disp('Detected /tmp/haltnow, aborting calculation')
+                    end
+                    
+                    % Halt before eddie kills the job
+                    if (toc / 3600.0) > 47.75
+                        cont = false;
+                        disp('Runtime approaching 48 hrs, halting calculation')
+                    end
+    
+                    iter = iter + 1;
 				end
 
 				varargout = {FI};
