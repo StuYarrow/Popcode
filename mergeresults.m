@@ -1,5 +1,6 @@
 function varargout = mergeresults(files, vars)
     
+    files = sort(files);
     out = cell(1,length(vars));
     
     for v = 1 : length(vars)
@@ -17,7 +18,7 @@ function varargout = mergeresults(files, vars)
         elseif isnumeric(in{1})
             out{v} = arraymerge(in{:});
         else
-            error('mergeresults: not cell or numeric')
+            out{v} = in;
         end     
     end
     
