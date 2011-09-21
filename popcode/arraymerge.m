@@ -1,14 +1,25 @@
 function out = arraymerge(varargin)
     s = size(varargin{1});
-    d = length(s) + 1;
     
     for arg = 1 : length(varargin)
+        if length(size(varargin{arg})) > length(s)
+            s(end+1 : length(size(varargin{arg}))) = 1;
+        end
+        
         s = max([size(varargin{arg}) ; s], [], 1);
     end
     
+    d = length(s) + 1;
+    
     arrays = {};
     for arg = 1 : length(varargin)
-        arrays{arg} = padarray(varargin{arg}, s - size(varargin{arg}), 0, 'post');
+        sPre = size(varargin{arg});
+        
+        if length(s) > length(sPre)
+            sPre(end+1 : length(s)) = 1;
+        end
+        
+        arrays{arg} = padarray(varargin{arg}, s - sPre, 0, 'post');
     end
     
     stack = cat(d, arrays{:});

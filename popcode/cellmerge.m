@@ -1,6 +1,10 @@
 function out = cellmerge(varargin)
 	s = size(varargin{1});
     for arg = 2 : length(varargin)
+        if length(size(varargin{arg})) > length(s)
+            s(end+1 : length(size(varargin{arg}))) = 1;
+        end
+        
         s = max([size(varargin{arg}) ; s], [], 1);
     end
 	
@@ -25,5 +29,15 @@ function merged = innermerge(varargin)
         merged = varargin{notEmpty};
     otherwise
         error('cellmerge: conflicting data')
+    end
+end
+
+
+function out = padcell(in, newSize)
+    out = cell(newSize);
+        
+    for el = 1 : numel(in)
+        [m n o p q r] = ind2sub(size(in), el);
+        out(m,n,o,p,q,r) = in(m,n,o,p,q,r);
     end
 end
