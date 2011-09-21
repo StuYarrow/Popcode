@@ -131,7 +131,7 @@ classdef Neurons
 			end
 		end
 		
-		function i = mi(obj, method, stim, tol)
+		function [i, iSem] = mi(obj, method, stim, tol, maxiter)
 			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
 				error([method ' is not a valid SSI calculation method'])
 			end
@@ -154,7 +154,7 @@ classdef Neurons
 			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
 			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
 
-			% Replicate cell arrays
+			% Replicate cell arrays across stimulus ensemble
 			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
 			rMeanCella = repmat(rMeanCell', [1 stim.n]);
 			
@@ -167,16 +167,17 @@ classdef Neurons
                 fRand = @(m, c, z) m + c * z; % don't truncate
             end
 			
-			iter = 1;
-			miBuf = rand(100,1);
-			varBuf = 0;
-			cont = true;
-			im = 0;
-			MI = 0;
-
+			iter = 1; % iteration counter
+            samples = zeros(1,maxiter); % Sample buffer
+            runMean = 0; % Running mean
+            runM2 = 0; % Running second moment
+            runSEM = 0; % Running SEM
+            
+            cont = true;
 			while cont
+                % Display progress every 
 				if ~mod(iter, 100)
-					fprintf('MI  iter: %d  val: %.2g  var: %.4e\n', iter, MI, varBuf)
+					fprintf('MI  iter: %d  val: %.2g  SEM: %.4e\n', iter, runMean, runSEM)
 				end
 
 				switch method
@@ -215,23 +216,39 @@ classdef Neurons
 
 				% MI in bits (convert from log_e to log_2)
 				lpRS = lpRS(bin);
-				im = im + (lpRS - (lpR + lpS)) ./ log(2);
-
-				% MI
-				MI = im / iter;
-
-				miBuf(1+mod(iter, 100)) = MI;
-				varBuf = var(miBuf);
-				cont = varBuf > tol & iter < 100000 | iter < 2000;
-
+                miEst = (lpRS - (lpR + lpS)) ./ log(2); % sample MI
+				samples(iter) = miEst;
+                                
+                % Compute running mean, variance, SEM
+                delta = miEst - runMean;
+                runMean = runMean + delta / iter;
+                runM2 = runM2 + delta * (miEst - runMean);
+                runVar = (runM2 / (iter - 1));
+                runSEM = sqrt(runVar / iter);
+                
+                % Test halting criteria (SEM, max iterations, min iterations)
+				cont = (runSEM > tol & iter < maxiter) | iter < 2000;
+                
 				iter = iter + 1;
-			end
-
-			i = MI;
+            end
+            
+            % Undo final increment of iteration counter
+            iter = iter - 1;
+            
+            % Trim unused samples from buffer
+            samples = samples(1:iter);
+            
+            % Recompute MI, SEM cleanly
+            i = mean(samples);
+            iSem = sqrt(var(samples) / iter);
 		end
 		
 		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxit, cont)
-			tic
+            try
+                dummy = toc;
+            catch
+                tic
+            end
 
 			try
 				% Test sanity of neuron indices
@@ -488,8 +505,14 @@ classdef Neurons
 			
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
-			end
-
+            end
+            
+            try
+                dummy = toc;
+            catch
+                tic
+            end
+            
 			switch method
 			case 'analytic'	
 				% Info=Fisher(N, alpha, correlation_type, param_correlation)
@@ -592,27 +615,26 @@ classdef Neurons
 			case {'randMC' 'quasirandMC'}
 				% obj.popSize x stim.n
 				rMean = obj.integrationTime .* meanR(obj, stim);
-				rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+                rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
 
 				% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-				%Q = obj.a .* repmat(obj.R, [1, 1, stim.n]) .* multiprod(rMean, rMean, [1 0], [0 1]) .^ obj.alpha
-				QCell1 = cellfun(@(r) obj.a .* obj.R .* (r * r').^obj.alpha, rMeanCell, 'UniformOutput', false);
-
-				% Define upper integration limits for QR method, limits are zero - 4 x max(sigma)
-				%QRlim = 4.0 .* sqrt(diag(max(reshape(cell2mat(QCell1), [obj.popSize obj.popSize stim.n]), [], 3)));
-				QRlim = cellfun(@(q) sqrt(diag(q)), QCell1, 'UniformOutput', false);
-
-				% Compute Cholesky decomps of Q matrices
-				cholQ = cellfun(@chol, QCell1, 'UniformOutput', false);
-
+                QCell1 = obj.Q(rMeanCell);
+                
+                % Compute Cholesky decomps of Q matrices
+                cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+                
+                % Invert Q matrices and compute Cholesky decomps
+                invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
+                cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
+                
 				% Normalisation terms for multivariate Gaussian
-				normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
+				%normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
 				%normFactor = mat2cell(normFactor, 1, ones(length(normFactor), 1));
-				normFactor = num2cell(normFactor);
+				%normFactor = num2cell(normFactor);
 
 				% Replicate normalisation factors and cov matrices into a 3-row cell array.  This allows us to
 				% compute two d/ds values (one either side of the nominal s) for each s.
-				normFactor = [normFactor(end) normFactor(1:end-1) ; normFactor ; normFactor(2:end) normFactor(1)];
+				%normFactor = [normFactor(end) normFactor(1:end-1) ; normFactor ; normFactor(2:end) normFactor(1)];
 				QCell = [QCell1(end) QCell1(1:end-1) ; QCell1 ; QCell1(2:end) QCell1(1)];
 
 				% Define function for multivariate gaussian sampling
@@ -622,11 +644,8 @@ classdef Neurons
 				    fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
 				else
 				    fRand = @(m, c, z) m + c * z; % don't truncate
-				end
-
-				% Define multivariate Gaussian pdf
-				fPofR = @(nor, res, q) nor * exp(-0.5 * res' * (q \ res));
-
+                end
+                
 				iter = 1;
                 cont = true;
                 hfPwrFI = 0;
@@ -646,54 +665,23 @@ classdef Neurons
 						% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
 						% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
 						rCell = cellfun(fRand, rMeanCell, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of {obj.popSize}
-
+                        
 					case 'quasirandMC'
-						% Generate Sobol' points
-						if iter == 1
-							sobolGen = sobolset(obj.popSize);
-						end
-						
-						
-						%	rawSobol = mat2cell(sobol(obj.popSize * stim.n, 1, 'init'), 1, ones(stim.n, 1));
-						%else
-						%	rawSobol = mat2cell(sobol(obj.popSize * stim.n, 1), 1, ones(stim.n, 1));
-						
-						repmat({sobolGen(iter,:)'}, [1 stim.n]);
+						%
+                    end
 
-						% Perform rescaling
-						rCell = cellfun(@times, QRlim, rawSobol);
-					end
-
-					% P(r|s)
-					% Subtract out the mean responses
-					subMeanR = cellfun(@minus, rCell, rMeanCell, 'UniformOutput', false);
-					subMeanR = repmat(subMeanR, 3, 1);
-
-					% Calculate response probability densities
-					pRgSd = cellfun(fPofR, normFactor, subMeanR, QCell); % 3 x stim.n
-					pRgS(iter,:) = pRgSd(2,:); % 1 x stim.n
-
-					% log2 P(r|s)
-					lpRgS = log2(pRgSd); % 3 x stim.n
-
-					% d/ds log2 P(r|s)
-					% Use diff on columns to find differences over intervals above/below stimulus ordinates
-					dlpRgS_offset = double(diff(lpRgS, 1, 1)); % 2 x stim.n
-					
-					if stim.circular
-						% If stimulus var is circular, everything is OK.
-						% Use mean to average over two adacent intervals, thus re-centreing the derivative
-						dlpRgS = mean(dlpRgS_offset, 1); % 1 x stim.n
-					else
-						% If not, we have to ignore the wrap-around diff and use single (non re-centred) values at both ends of the range
-						dlpRgS = [dlpRgS_offset(2,1) mean(dlpRgS_offset(2:end-1), 1) dlpRgS_offset(1,end)]; % 1 x stim.n
-					end
-					
+                    % log P(r|s)
+                    % Calculate response probability densities
+                    lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell, cholInvQCell, {'inv'})); % 1 x stim.n
+                    
+                    % d/ds log P(r|s)
+					% Find numerical gradient
+					dlpRgS = gradient(lpRgS); % 1 x stim.n
+                    
 					% Divide by bin widths to get derivative
-					dlpRgS = dlpRgS ./ stim.width;
+					dlpRgS = dlpRgS ./ stim.width; % 1 x stim.n
 
-					% (d/ds log2 P(r|s))^2
-					%dlpRgS2(iter,:) = dlpRgS.^2; % 1 x stim.n
+					% (d/ds log P(r|s))^2
 					acc = acc + dlpRgS .^ 2;
 
 					switch method
