@@ -131,7 +131,7 @@ classdef Neurons
 			end
 		end
 		
-		function [i, iSem] = mi(obj, method, stim, tol, maxiter)
+		function varargout = mi(obj, method, stim, tol, maxiter)
 			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
 				error([method ' is not a valid SSI calculation method'])
 			end
@@ -167,7 +167,7 @@ classdef Neurons
                 fRand = @(m, c, z) m + c * z; % don't truncate
             end
 			
-			iter = 1; % iteration counter
+			iter = 0; % iteration counter
             samples = zeros(1,maxiter); % Sample buffer
             runMean = 0; % Running mean
             runM2 = 0; % Running second moment
@@ -175,9 +175,11 @@ classdef Neurons
             
             cont = true;
 			while cont
-                % Display progress every 
+                iter = iter + 1;
+                
+                % Display progress every 100 iterations
 				if ~mod(iter, 100)
-					fprintf('MI  iter: %d  val: %.2g  SEM: %.4e\n', iter, runMean, runSEM)
+					fprintf('mi()  iter: %d  val: %.4g  SEM: %.4g\n', iter, runMean, runSEM)
 				end
 
 				switch method
@@ -228,12 +230,7 @@ classdef Neurons
                 
                 % Test halting criteria (SEM, max iterations, min iterations)
 				cont = (runSEM > tol & iter < maxiter) | iter < 2000;
-                
-				iter = iter + 1;
             end
-            
-            % Undo final increment of iteration counter
-            iter = iter - 1;
             
             % Trim unused samples from buffer
             samples = samples(1:iter);
@@ -241,6 +238,17 @@ classdef Neurons
             % Recompute MI, SEM cleanly
             i = mean(samples);
             iSem = sqrt(var(samples) / iter);
+            
+            switch nargout
+            case 1
+                varargout = {i};
+            case 2
+                varargout = {i iSem};
+            case 3
+                varargout = {i iSem samples};
+            otherwise
+                error('Unsupported number of return values.')
+            end
 		end
 		
 		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxit, cont)
