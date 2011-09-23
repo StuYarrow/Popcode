@@ -228,8 +228,8 @@ classdef Neurons
                 runVar = (runM2 / (iter - 1));
                 runSEM = sqrt(runVar / iter);
                 
-                % Test halting criteria (SEM, max iterations, min iterations)
-				cont = (runSEM > tol & iter < maxiter) | iter < 2000;
+                % Test halting criteria (SEM, max iterations limit)
+				cont = runSEM > tol & iter < maxiter;
             end
             
             % Trim unused samples from buffer
@@ -238,6 +238,9 @@ classdef Neurons
             % Recompute MI, SEM cleanly
             i = mean(samples);
             iSem = sqrt(var(samples) / iter);
+            
+            % Report final values
+            fprintf('mi() halting  iter: %d  val: %.4g  SEM: %.4g\n', iter, i, iSem)
             
             switch nargout
             case 1
