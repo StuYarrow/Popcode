@@ -152,11 +152,13 @@ classdef Neurons
 			
 			% Invert Q matrices
 			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
+            clear QCell1
 			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
+            clear invQCell
 
 			% Replicate cell arrays across stimulus ensemble
-			cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
-			rMeanCella = repmat(rMeanCell', [1 stim.n]);
+			%cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
+			%rMeanCella = repmat(rMeanCell', [1 stim.n]);
 			
 			% Define function for multivariate gaussian sampling
 			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
@@ -173,6 +175,8 @@ classdef Neurons
             runM2 = 0; % Running second moment
             runSEM = 0; % Running SEM
             
+            cpS = cumsum(stim.pS);
+            
             cont = true;
 			while cont
                 iter = iter + 1;
@@ -185,7 +189,7 @@ classdef Neurons
 				switch method
 				case 'randMC'
 					% Sample s from stimulus distribution
-					[dummy bin] = histc(rand(), cumsum(stim.pS));
+					[dummy bin] = histc(rand(), cpS);
 					bin = bin + 1;
 					%s = double(stim.ensemble);
 					%s = s(bin);
@@ -194,7 +198,7 @@ classdef Neurons
 					% Generate vector of independent normal random numbers (mu=0, sigma=1)
 					z = randn(obj.popSize, 1);
 					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO - see above !!!
+					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO depending on value of obj.truncate !!!
 					r = fRand(rMeanCell{bin}, cholQ{bin}, z);
 				end
 
@@ -202,8 +206,9 @@ classdef Neurons
 				% Replicate to form a stim.n x stim.n cell array of response vectors
 				rCell = repmat({r}, [stim.n 1]);
 				% Calculate response log probability densities
-				lpRgS = cellfun(@normpdfln, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
-
+				%lpRgS = cellfun(@normpdfln, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
+                lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                
 				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
 				pS = stim.pS;
@@ -230,6 +235,9 @@ classdef Neurons
                 
                 % Test halting criteria (SEM, max iterations limit)
 				cont = runSEM > tol & iter < maxiter;
+                
+                % Impose minimum iteration limit so we get a sensible estimate of SEM
+                cont = cont | iter < 10;
             end
             
             % Trim unused samples from buffer
@@ -254,7 +262,8 @@ classdef Neurons
             end
 		end
 		
-		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxit, cont)
+		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxiter, timeout)
+            % Initialise wall clock if necessary
             try
                 dummy = toc;
             catch
@@ -275,23 +284,13 @@ classdef Neurons
 				error([inputname(5) ' is not a valid stimulus ordinate index'])
 			end
 			
-			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
+			if ~any(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'}))
 				error([method ' is not a valid SSI calculation method'])
 			end
 
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
-			end
-			
-			% Should we treat the function as continuous, i.e. can we use smoothness measures?
-			switch lower(cont)
-			case 'cont'
-				continuous = true;
-			case 'disc'
-				continuous = false;
-			otherwise
-				error('Valid options are disc and cont')
-			end
+            end
 			
 			% Create mask for calculating specific stimulus ordinates only
 			if ~isempty(stimOrds)
@@ -321,10 +320,8 @@ classdef Neurons
 			
 			if ~isempty(n)
 				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
-				margMask = ones(obj.popSize, 1);
+				margMask = true(obj.popSize, 1);
 				margMask(n) = false;
-				% Number of remaining neurons
-				margMask = logical(margMask);
 				
 				% Get mean responses for each stimulus ordinate
 				rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
@@ -348,24 +345,32 @@ classdef Neurons
                 fRand = @(m, c, z) m + c * z; % don't truncate
             end
 			
-			iter = 1;
+            % Initialise main loop, preallocate MC sample arrays
+			iter = 0;
 			cont = true;
-			hfPwrSSI = 0;
-			iSP = zeros(1, sMaskN);
-			iSPmarg = iSP;
-			hfPwrIsur = 0;
-			acc = zeros(1, sMaskN);
-			accMarg = acc;
+            
+            Issi.samples = zeros(maxiter, sMaskN);
+            Issi.runMean = zeros(1, sMaskN);
+            Issi.runM2 = zeros(1, sMaskN);
+            
+            Isur.samples = zeros(maxiter, sMaskN);
+            Isur.runMean = zeros(1, sMaskN);
+            Isur.runM2 = zeros(1, sMaskN);
+            
+            IssiMarg.samples = zeros(maxiter, sMaskN);
+            IssiMarg.runMean = zeros(1, sMaskN);
+            IssiMarg.runM2 = zeros(1, sMaskN);
+            
+            IsurMarg.samples = zeros(maxiter, sMaskN);
+            IsurMarg.runMean = zeros(1, sMaskN);
+            IsurMarg.runM2 = zeros(1, sMaskN);
 			
+            % Main MC sampling loop
 			while cont
+                iter = iter + 1;
+
 				if ~mod(iter, 10)
-					if continuous
-						hfPwrSSI = hfpwr1(SSI);
-						hfPwrIsur = hfpwr1(Isur);
-						fprintf('SSISS iter: %d  HF power: %.4e %.4e\n', iter, hfPwrSSI, hfPwrIsur)
-					else
-						fprintf('SSISS iter: %d of %d\n', iter, maxit)
-					end
+					fprintf('SSISS iter: %d of %d, SEM: %.4g\n', iter, maxiter, mean(Issi.runSEM))
 				end
 
 				switch method
@@ -392,7 +397,7 @@ classdef Neurons
 
 				% log P(r)
 				% Calculate marginal by summing over s'
-				lpR = logsumexp(lpRS);
+				lpR = logsumexp(lpRS, 1);
 				
 				% log P(s'|r)
 				% Divide joint by marginal P(r)
@@ -401,114 +406,129 @@ classdef Neurons
 				% H(s'|r), in bits, converting from log_e to log_2
 				hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
 
-				% Accumulate Isp(r)
+				% Sample specific information Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
-				iSP = iSP + stim.entropy - hSgR;
+				Issi.samples(iter,:) = stim.entropy - hSgR;
 				
+                % Sample specific surprise
 				% log_2( P(r|s) / P(r) )
 				% Accumulate samples
-				acc = acc + (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
+				Isur.samples(iter,:) = (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
 				
-				% Issi(s)
-				% SSI; average of Isp over all r samples
-				fullSSI = iSP ./ iter;
+                % Compute running mean, variance, SEM [Issi]
+                Issi.delta = Issi.samples(iter,:) - Issi.runMean;
+                Issi.runMean = Issi.runMean + Issi.delta ./ iter;
+                Issi.runM2 = Issi.runM2 + Issi.delta .* (Issi.samples(iter,:) - Issi.runMean);
+                Issi.runVar = (Issi.runM2 ./ (iter - 1));
+                Issi.runSEM = sqrt(Issi.runVar ./ iter);
+                
+                % Compute running mean, variance, SEM [Isur]
+                Isur.delta = Isur.samples(iter,:) - Isur.runMean;
+                Isur.runMean = Isur.runMean + Isur.delta ./ iter;
+                Isur.runM2 = Isur.runM2 + Isur.delta .* (Isur.samples(iter,:) - Isur.runMean);
+                Isur.runVar = (Isur.runM2 ./ (iter - 1));
+                Isur.runSEM = sqrt(Isur.runVar ./ iter);
 				
-				% Isur(s)
-				fullIsur = acc ./ iter;
-				
-				if exist('margMask', 'var')
+                if exist('margMask', 'var')
 					% If we are calculating a marginal SSI, compute the SSI for remaining neurons
-
+                    
 					% Mask out neurons of interest in response vectors
 					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
-
+                    
 					% log P(r|s)
 					lpRgS = cell2mat(cellsxfun(@normpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
-
+                    
 					% log P(r,s)
 					% Multiply P(r|s) and P(s) to find joint distribution
 					lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
-
+                    
 					% log P(r)
 					% Calculate marginal by summing over s'
-					lpR = logsumexp(lpRS);
-
+					lpR = logsumexp(lpRS, 1);
+                    
 					% log P(s|r)
 					% Divide joint by marginal P(r)
 					lpSgR = bsxfun(@minus, lpRS, lpR);
-
+                    
 					% H(s|r), in bits, converting from log_e to log_2
 					hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
-
+                    
 					% Isp(r)
 					% Specific information; reduction in stimulus entropy due to observation of r
-					iSPmarg = iSPmarg + stim.entropy - hSgR;
+                    % Compute MC sample
+					IssiMarg.samples(iter,:) = stim.entropy - hSgR;
 					
+                    % Specific surprise
 					% log_2( P(r|s) / P(r) )
-					% Accumulate samples
-					accMarg = accMarg + (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
-
-					% Issi(s)
-					% SSI; average of Isp over all r samples
-					remainderSSI = iSPmarg ./ iter;
-					SSI = fullSSI - remainderSSI;
+					% Compute MC sample
 					
-					% Isur(s)
-					remainderIsur = accMarg ./ iter;
-					Isur = fullIsur - remainderIsur;
-				else
-					remainderSSI = fullSSI;
-					SSI = fullSSI;
-					
-					remainderIsur = fullIsur;
-					Isur = fullIsur;
-				end
-
-				% Smoothness measure doesn't work if we are only
-				% calculating selected stimulus ordinates, so run until
-				% iteration limit
-				if ~mod(iter, 10) && continuous
-					cont = hfPwrSSI > tol || hfPwrIsur > tol;
-				else
-					cont = true;
-				end
-
-				if iter < 100
-					cont = true;
-				end
-
-				if iter >= maxit
-					cont = false;
-					disp('Iteration limit exceeded')
-				end
-				
-				if exist('/tmp/haltnow', 'file')
-					cont = false;
-					disp('Detected /tmp/haltnow, aborting calculation')
-				end
-				
-				% Halt before eddie kills the job
-				if (toc / 3600.0) > 47.75
-					cont = false;
-					disp('Runtime approaching 48 hrs, halting calculation')
-				end
-
-				iter = iter + 1;
+                    IsurMarg.samples(iter,:) = (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
+                    
+                    % Compute running mean, variance, SEM [Issi]
+                    IssiMarg.delta = IssiMarg.samples(iter,:) - IssiMarg.runMean;
+                    IssiMarg.runMean = IssiMarg.runMean + IssiMarg.delta ./ iter;
+                    IssiMarg.runM2 = IssiMarg.runM2 + IssiMarg.delta .* (IssiMarg.samples(iter,:) - IssiMarg.runMean);
+                    IssiMarg.runVar = (IssiMarg.runM2 ./ (iter - 1));
+                    IssiMarg.runSEM = sqrt(IssiMarg.runVar ./ iter);
+                    
+                    % Compute running mean, variance, SEM [Isur]
+                    IsurMarg.delta = IsurMarg.samples(iter,:) - IsurMarg.runMean;
+                    IsurMarg.runMean = IsurMarg.runMean + IsurMarg.delta ./ iter;
+                    IsurMarg.runM2 = IsurMarg.runM2 + IsurMarg.delta .* (IsurMarg.samples(iter,:) - IsurMarg.runMean);
+                    IsurMarg.runVar = (IsurMarg.runM2 ./ (iter - 1));
+                    IsurMarg.runSEM = sqrt(IsurMarg.runVar ./ iter);
+                end
+                
+                % Test halting criteria (SEM, max iterations limit, timeout)
+				if exist('margMask', 'var') 
+                    runSEM = mean([Issi.runSEM IssiMarg.runSEM]);
+                else
+                    runSEM = mean(Issi.runSEM);
+                end
+                
+                cont = all([runSEM > tol, iter < maxiter, toc < timeout]);
+                
+                % Impose minimum iteration limit so we get a sensible estimate of SEM
+                cont = cont | iter < 10;
 			end
 
-			fprintf('SSISS iter: %d  elapsed time: %.4f seconds\n', iter - 1, toc)
-
+			fprintf('SSISS iter: %d  elapsed time: %.4f seconds\n', iter, toc)
+            
+            % Trim sample arrays
+            Issi.samples = Issi.samples(1:iter,:);
+            Isur.samples = Isur.samples(1:iter,:);
+            IssiMarg.samples = IssiMarg.samples(1:iter,:);
+            IsurMarg.samples = IsurMarg.samples(1:iter,:);
+                        
+            % Recalculate means cleanly
+            fullSSI = mean(Issi.samples, 1);
+            fullIsur = mean(Isur.samples, 1);
+            
+            if exist('margMask', 'var')
+                remSSI = mean(IssiMarg.samples);
+                SSI = fullSSI - remSSI;
+                remIsur = mean(IsurMarg.samples);
+            else
+                remSSI = fullSSI;
+                SSI = fullSSI;
+                remIsur = fullIsur;
+            end
+            
 			switch nargout
 			case 1
 				varargout = {SSI};
 			case 2
-				varargout = {SSI (iter - 1)};
+				varargout = {SSI iter};
 			case 3
-				varargout = {fullSSI remainderSSI (iter - 1)};
+				varargout = {fullSSI remSSI iter};
+            case 4
+                varargout = {fullSSI remSSI iter Issi IssiMarg};
 			case 5
-				varargout = {fullSSI remainderSSI fullIsur remainderIsur (iter - 1)};
+				varargout = {fullSSI remSSI fullIsur remIsur iter};
+            case 9
+                varargout = {fullSSI remSSI fullIsur remIsur iter Issi Isur IssiMarg IsurMarg};
 			otherwise
-				error('Wrong number of outputs')
+				error('Unsupported number of outputs')
 			end
 		end
 		
@@ -788,7 +808,8 @@ classdef Neurons
 				pS = pS ./ sum(pS);
 			end
 			
-			ifish = stim.entropy - sum(pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ fish));
+			%ifish = stim.entropy - sum(pS .* 0.5 .* log2(2.0 .* pi .* exp(1) ./ fish));
+            ifish = stim.entropy - 0.5 .* sum(pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(fish)));
 		end
 		
 		function ifish = mIfisher(obj, nMarg, stim)
