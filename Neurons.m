@@ -206,8 +206,7 @@ classdef Neurons
 				% Replicate to form a stim.n x stim.n cell array of response vectors
 				rCell = repmat({r}, [stim.n 1]);
 				% Calculate response log probability densities
-				%lpRgS = cellfun(@normpdfln, rCell, rMeanCella(:,bin), cholInvQCell(:,bin), repmat({'inv'}, [stim.n 1]));
-                lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
                 
 				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
@@ -389,7 +388,7 @@ classdef Neurons
 
 				% log P(r|s')
 				% Calculate response probability densities
-				lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+				lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
                 
 				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
@@ -436,7 +435,7 @@ classdef Neurons
 					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
                     
 					% log P(r|s)
-					lpRgS = cell2mat(cellsxfun(@normpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+					lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
                     
 					% log P(r,s)
 					% Multiply P(r|s) and P(s) to find joint distribution
@@ -703,7 +702,7 @@ classdef Neurons
 
                     % log P(r|s)
                     % Calculate response probability densities
-                    lpRgS = cell2mat(cellsxfun(@normpdfln, rCell, rMeanCell, cholInvQCell, {'inv'})); % 1 x stim.n
+                    lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell, cholInvQCell, {'inv'})); % 1 x stim.n
                     
                     % d/ds log P(r|s)
 					% Find numerical gradient
@@ -851,7 +850,7 @@ classdef Neurons
 				sigmaMat = repmat(sigma, [stim.n 1]);
 
 				% log p(sHat|S)
-				lpsHat_s = cellfun(@normpdfln, num2cell(dS), num2cell(zeros([stim.n stim.n])), num2cell(sigmaMat));
+				lpsHat_s = cellfun(@mvnormpdfln, num2cell(dS), num2cell(zeros([stim.n stim.n])), num2cell(sigmaMat));
 				
 				% log p(S)
 				lpS = log(psMat);
@@ -881,7 +880,7 @@ classdef Neurons
 			sigmaMat = repmat(sigma, [stim.n 1]);
 
 			% log p(sHat|S)
-			lpsHat_s = cellfun(@normpdfln, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
+			lpsHat_s = cellfun(@mvnormpdfln, num2cell(dS), repmat({0}, [stim.n stim.n]), num2cell(sigmaMat));
 			
 			% log p(S)
 			lpS = log(psMat);
