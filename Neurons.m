@@ -869,10 +869,7 @@ classdef Neurons
 				isp = stim.entropy - Hs_sHat;
 
 				% SSIfisher
-				%ssifRem = sum(exp(lpsHat_s) .* repmat(isp, [1 stim.n]), 1);
                 ssifRem = sum(exp(lpsHat_s + repmat(log(isp), [1 stim.n])), 1);
-                
-                %fprintf('Rem Fisher max: %g min: %g diff: %g\n', max(remFI), min(remFI), max(remFI) - min(remFI))
 			else
 				fullFI = obj.fisher(fisherMethod, stim, tol);
 			end
@@ -902,11 +899,8 @@ classdef Neurons
 			isp = stim.entropy - Hs_sHat;
 			
 			% SSIfisher
-			%ssifFull = sum(exp(lpsHat_s) .* repmat(isp, [1 stim.n]), 1);
             ssifFull = sum(exp(lpsHat_s + repmat(log(isp), [1 stim.n])), 1);
 			
-            %fprintf('Rem SSIf max: %g min: %g diff: %g\n', max(ssifRem), min(ssifRem), max(ssifRem) - min(ssifRem))
-            
 			if ~isempty(n)
 				ssif = ssifFull - ssifRem;
 			else
