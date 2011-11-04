@@ -4,9 +4,9 @@ le = errorbar(x, y, err);
 errorbarlogx(le, width)
 set(le, 'linestyle', '-', 'color', 'k', 'marker', 'none')
 
-line([x/(0.5*10^width), x, x*(0.5 * 10^width)], [y y y], 'color', 'k')
+line([x/(10^(width*0.5)), x, x*(10^(width*0.5))], [y y y], 'color', 'k')
 
-t = text(x * 1.5 * 10^width, y, label);
+t = text(x * 10^(width * 1.5), y, label);
 set(t, 'fontsize', 8, 'verticalalignment', 'middle', 'horizontalalignment', 'left')
 
 h = [le t];
