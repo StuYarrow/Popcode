@@ -170,10 +170,7 @@ classdef Neurons
             end
 			
 			iter = 0; % iteration counter
-            samples = zeros(1,maxiter); % Sample buffer
-            runMean = 0; % Running mean
-            runM2 = 0; % Running second moment
-            runSEM = 0; % Running SEM
+            miEst = OnlineStats(1, maxiter);
             
             cpS = cumsum(stim.pS);
             
@@ -222,29 +219,23 @@ classdef Neurons
 
 				% MI in bits (convert from log_e to log_2)
 				lpRS = lpRS(bin);
-                miEst = (lpRS - (lpR + lpS)) ./ log(2); % sample MI
-				samples(iter) = miEst;
-                                
-                % Compute running mean, variance, SEM
-                delta = miEst - runMean;
-                runMean = runMean + delta / iter;
-                runM2 = runM2 + delta * (miEst - runMean);
-                runVar = (runM2 / (iter - 1));
-                runSEM = sqrt(runVar / iter);
+                
+                % sample MI
+                miEst.appendSample((lpRS - (lpR + lpS)) ./ log(2));
                 
                 % Test halting criteria (SEM, max iterations limit)
-				cont = runSEM > tol & iter < maxiter;
+				cont = miEst.runSEM > tol & iter < maxiter;
                 
                 % Impose minimum iteration limit so we get a sensible estimate of SEM
                 cont = cont | iter < 10;
             end
             
             % Trim unused samples from buffer
-            samples = samples(1:iter);
+            miEst.trim;
             
             % Recompute MI, SEM cleanly
-            i = mean(samples);
-            iSem = sqrt(var(samples) / iter);
+            i = miEst.mean;
+            iSem = miEst.sem;
             
             % Report final values
             fprintf('mi() halting  iter: %d  val: %.4g  SEM: %.4g\n', iter, i, iSem)
@@ -255,7 +246,7 @@ classdef Neurons
             case 2
                 varargout = {i iSem};
             case 3
-                varargout = {i iSem samples};
+                varargout = {i iSem miEst};
             otherwise
                 error('Unsupported number of return values.')
             end
@@ -304,7 +295,7 @@ classdef Neurons
 			
 			% Get mean responses for each stimulus ordinate
 			% obj.popSize x stim.n
-			rMean = obj.integrationTime .* meanR(obj, stim);
+			rMean = obj.integrationTime .* obj.meanR(stim);
 			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
 
 			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
@@ -348,21 +339,10 @@ classdef Neurons
 			iter = 0;
 			cont = true;
             
-            Issi.samples = zeros(maxiter, sMaskN);
-            Issi.runMean = zeros(1, sMaskN);
-            Issi.runM2 = zeros(1, sMaskN);
-            
-            Isur.samples = zeros(maxiter, sMaskN);
-            Isur.runMean = zeros(1, sMaskN);
-            Isur.runM2 = zeros(1, sMaskN);
-            
-            IssiMarg.samples = zeros(maxiter, sMaskN);
-            IssiMarg.runMean = zeros(1, sMaskN);
-            IssiMarg.runM2 = zeros(1, sMaskN);
-            
-            IsurMarg.samples = zeros(maxiter, sMaskN);
-            IsurMarg.runMean = zeros(1, sMaskN);
-            IsurMarg.runM2 = zeros(1, sMaskN);
+            Issi = OnlineStats(sMaskN, maxiter);
+            Isur = OnlineStats(sMaskN, maxiter);
+            IssiMarg = OnlineStats(sMaskN, maxiter);
+            IsurMarg = OnlineStats(sMaskN, maxiter);
 			
             % Main MC sampling loop
 			while cont
@@ -407,26 +387,12 @@ classdef Neurons
 
 				% Sample specific information Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
-				Issi.samples(iter,:) = stim.entropy - hSgR;
-				
+				Issi.appendSample(stim.entropy - hSgR);
+                
                 % Sample specific surprise
 				% log_2( P(r|s) / P(r) )
 				% Accumulate samples
-				Isur.samples(iter,:) = (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
-				
-                % Compute running mean, variance, SEM [Issi]
-                Issi.delta = Issi.samples(iter,:) - Issi.runMean;
-                Issi.runMean = Issi.runMean + Issi.delta ./ iter;
-                Issi.runM2 = Issi.runM2 + Issi.delta .* (Issi.samples(iter,:) - Issi.runMean);
-                Issi.runVar = (Issi.runM2 ./ (iter - 1));
-                Issi.runSEM = sqrt(Issi.runVar ./ iter);
-                
-                % Compute running mean, variance, SEM [Isur]
-                Isur.delta = Isur.samples(iter,:) - Isur.runMean;
-                Isur.runMean = Isur.runMean + Isur.delta ./ iter;
-                Isur.runM2 = Isur.runM2 + Isur.delta .* (Isur.samples(iter,:) - Isur.runMean);
-                Isur.runVar = (Isur.runM2 ./ (iter - 1));
-                Isur.runSEM = sqrt(Isur.runVar ./ iter);
+                Isur.appendSample((diag(lpRgS(stimOrds,:))' - lpR) ./ log(2));
 				
                 if exist('margMask', 'var')
 					% If we are calculating a marginal SSI, compute the SSI for remaining neurons
@@ -455,27 +421,12 @@ classdef Neurons
 					% Isp(r)
 					% Specific information; reduction in stimulus entropy due to observation of r
                     % Compute MC sample
-					IssiMarg.samples(iter,:) = stim.entropy - hSgR;
+                    IssiMarg.appendSample(stim.entropy - hSgR);
 					
                     % Specific surprise
 					% log_2( P(r|s) / P(r) )
 					% Compute MC sample
-					
-                    IsurMarg.samples(iter,:) = (diag(lpRgS(stimOrds,:))' - lpR) ./ log(2);
-                    
-                    % Compute running mean, variance, SEM [Issi]
-                    IssiMarg.delta = IssiMarg.samples(iter,:) - IssiMarg.runMean;
-                    IssiMarg.runMean = IssiMarg.runMean + IssiMarg.delta ./ iter;
-                    IssiMarg.runM2 = IssiMarg.runM2 + IssiMarg.delta .* (IssiMarg.samples(iter,:) - IssiMarg.runMean);
-                    IssiMarg.runVar = (IssiMarg.runM2 ./ (iter - 1));
-                    IssiMarg.runSEM = sqrt(IssiMarg.runVar ./ iter);
-                    
-                    % Compute running mean, variance, SEM [Isur]
-                    IsurMarg.delta = IsurMarg.samples(iter,:) - IsurMarg.runMean;
-                    IsurMarg.runMean = IsurMarg.runMean + IsurMarg.delta ./ iter;
-                    IsurMarg.runM2 = IsurMarg.runM2 + IsurMarg.delta .* (IsurMarg.samples(iter,:) - IsurMarg.runMean);
-                    IsurMarg.runVar = (IsurMarg.runM2 ./ (iter - 1));
-                    IsurMarg.runSEM = sqrt(IsurMarg.runVar ./ iter);
+                    IsurMarg.appendSample((diag(lpRgS(stimOrds,:))' - lpR) ./ log(2));
                 end
                 
                 % Test halting criteria (SEM, max iterations limit, timeout)
@@ -487,26 +438,26 @@ classdef Neurons
                 
                 cont = all([runSEM > tol, iter < maxiter, toc < timeout]);
                 
-                % Impose minimum iteration limit so we get a sensible estimate of SEM
+                % Impose minimum iteration limit so we get a valid estimate of SEM
                 cont = cont | iter < 10;
 			end
 
 			fprintf('SSISS iter: %d  elapsed time: %.4f seconds\n', iter, toc)
             
             % Trim sample arrays
-            Issi.samples = Issi.samples(1:iter,:);
-            Isur.samples = Isur.samples(1:iter,:);
-            IssiMarg.samples = IssiMarg.samples(1:iter,:);
-            IsurMarg.samples = IsurMarg.samples(1:iter,:);
+            Issi.trim;
+            Isur.trim;
+            IssiMarg.trim;
+            IsurMarg.trim;
                         
             % Recalculate means cleanly
-            fullSSI = mean(Issi.samples, 1);
-            fullIsur = mean(Isur.samples, 1);
+            fullSSI = Issi.mean;
+            fullIsur = Isur.mean;
             
             if exist('margMask', 'var')
-                remSSI = mean(IssiMarg.samples);
+                remSSI = IssiMarg.mean;
                 SSI = fullSSI - remSSI;
-                remIsur = mean(IsurMarg.samples);
+                remIsur = IsurMarg.mean;
             else
                 remSSI = fullSSI;
                 SSI = fullSSI;
@@ -531,7 +482,7 @@ classdef Neurons
 			end
 		end
 		
-		function varargout = fisher(obj, method, stim, tol, maxit)
+		function varargout = fisher(obj, method, stim, tol, maxiter)
 			
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
@@ -568,26 +519,12 @@ classdef Neurons
 				% Info(6):  I_SQE
 
 				% pseries@gatsby.ucl.ac.uk  2/20/2005
-
-				%phi = repmat(degToRad(double(obj.preferredStimulus)) [1 stim.n]);
-				%phi_stim = repmat(degToRad(double(stim.ensemble)) [obj.popSize 1]);
-				%x = phi - phi_stim; % in radians, phi_stim is the orientation of the stimulus
-
-				% ==============================================================
-				% Tuning Curves (circular normal), mean variance relationship, and
-				% useful Fourier transforms
-				% ==============================================================
+				% s.yarrow@ed.ac.uk 2008-2011
 
 				f = obj.integrationTime .* meanR(obj, stim);
 				f_prime = obj.integrationTime .* dMeanR(obj, stim);
 
 				g0 = f_prime ./ f;
-				%h0 = f_prime ./ (f.^obj.alpha);
-
-				%g0_tilda= ifftshift(abs(ifft(g0)));  % and Fourier
-				%tranforms
-				%h0_tilda_square= conj(ifftshift(ifft(h0))).*ifftshift(ifft(h0));
-				%g0_tilda_square= conj(ifftshift(ifft(g0))).*ifftshift(ifft(g0));
 
 				% ==============================================================
 				% Correlation matrix, Covariance matrix, inverse and derivative.
@@ -605,12 +542,6 @@ classdef Neurons
 				fQ_prime = @(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q;
 				Q_prime = cellfun(fQ_prime, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
 
-				%d = cellfun(@(kk, ff) kk .* ff.^(2*obj.alpha), k, fCell, 'UniformOutput', false);	
-				%d_prime = cellfun(@(kk, kp, ff, fp) 2 .* obj.alpha .* kk .* fp .* ff.^(2*obj.alpha-1) + kp .* ff.^(2*obj.alpha), k, k_prime, fCell, f_primeCell, 'UniformOutput', false);
-				%D_inv = cellfun(@(dd) inv(diag(dd)), d, 'UniformOutput', false);
-				%D_prime = cellfun(@diag, d_prime, 'UniformOutput', false);
-				%J = cellfun(@times, QCell1, QCell1, 'UniformOutput', false);
-
 				% ==============================================================
 				% Fisher Information
 				% I_mean, I_cov and approximation of I_cov
@@ -624,15 +555,9 @@ classdef Neurons
 				end
 
 				Info(3,:) = cellfun(@(qp, qi) 0.5 * trace(qp * qi * qp * qi), Q_prime, Q_inv);  % direct method for Icov
-				%Info(4) = 0.5 * trace(D_prime * D_inv * D_prime * D_inv);  % direct method for Icov_shuffle
 
 				Info(5,:) = Info(1,:) + Info(3,:);                         % Fisher
-				%Info(6) = 0.5 * d_prime * inv(J) * d_prime';             % second term of I_sqe
-
-				%Info = Info * (pi^2) / (180.^2); % convert to degrees ^-2
-				%fprintf('\n.. I_mean : %.5f \n.. I_mean_ind : %.5f \n.. I_cov : %.5f \n.. I_cov_ind : %.5f \n.. I_tot : %.5f\n\n', Info(1), Info(2), Info(3), Info(4), Info(5));
-				%fprintf('I_SQE : %.5f\n\n', Info(1)+Info(6));
-
+                
 				switch nargout
 				case 1
 					varargout = {Info(5,:)};
@@ -644,7 +569,7 @@ classdef Neurons
 
 			case {'randMC' 'quasirandMC'}
 				% obj.popSize x stim.n
-				rMean = obj.integrationTime .* meanR(obj, stim);
+				rMean = obj.integrationTime .* obj.meanR(stim);
                 rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
 
 				% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
@@ -657,16 +582,6 @@ classdef Neurons
                 invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
                 cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
                 
-				% Normalisation terms for multivariate Gaussian
-				%normFactor = 1.0 ./ ((2.0 .* pi).^(double(obj.popSize) ./ 2.0) .* cellfun(@det, QCell1).^0.5);
-				%normFactor = mat2cell(normFactor, 1, ones(length(normFactor), 1));
-				%normFactor = num2cell(normFactor);
-
-				% Replicate normalisation factors and cov matrices into a 3-row cell array.  This allows us to
-				% compute two d/ds values (one either side of the nominal s) for each s.
-				%normFactor = [normFactor(end) normFactor(1:end-1) ; normFactor ; normFactor(2:end) normFactor(1)];
-				QCell = [QCell1(end) QCell1(1:end-1) ; QCell1 ; QCell1(2:end) QCell1(1)];
-
 				% Define function for multivariate gaussian sampling
 				% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
                 
@@ -676,22 +591,23 @@ classdef Neurons
 				    fRand = @(m, c, z) m + c * z; % don't truncate
                 end
                 
-				iter = 1;
+				iter = 0;
                 cont = true;
-                hfPwrFI = 0;
-                acc = zeros(1, stim.n);
+                
+                FI = OnlineStats(stim.n, maxiter);
                 
                 while cont
+                    iter = iter + 1;
+                    
                     if ~mod(iter, 10)
-                        hfPwrFI = hfpwr1(FI);
-                        fprintf('Fisher iter: %d  HF power: %.4e\n', iter, hfPwrFI)
+                        fprintf('Fisher iter: %d, SEM: %.4g\n', iter, mean(FI.runSEM))
                     end
                     
 					switch method
 					case 'randMC'
 						% Sample r from response distribution
 						% Generate vector of independent normal random numbers (mu=0, sigma=1)
-						zCell = squeeze(mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1)));
+						zCell = mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1));
 						% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
 						% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
 						rCell = cellfun(fRand, rMeanCell, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of {obj.popSize}
@@ -712,47 +628,23 @@ classdef Neurons
 					dlpRgS = dlpRgS ./ stim.width; % 1 x stim.n
 
 					% (d/ds log P(r|s))^2
-					acc = acc + dlpRgS .^ 2;
-
-					switch method
-					case 'randMC'
-						%FI = mean(dlpRgS2, 1);
-						FI = acc ./ iter;
-					end
-
-                    % Smoothness measure doesn't work if we are only
-                    % calculating selected stimulus ordinates, so run until
-                    % iteration limit
-                    if ~mod(iter, 10)
-                        cont = hfPwrFI > tol;
-                    else
-                        cont = true;
-                    end
-    
-                    if iter < 100
-                        cont = true;
-                    end
-    
-                    if iter >= maxit
-                        cont = false;
-                        disp('Iteration limit exceeded')
-                    end
+                    FI.appendSample(dlpRgS .^ 2);
                     
-                    if exist('/tmp/haltnow', 'file')
-                        cont = false;
-                        disp('Detected /tmp/haltnow, aborting calculation')
-                    end
-                    
-                    % Halt before eddie kills the job
-                    if (toc / 3600.0) > 47.75
-                        cont = false;
-                        disp('Runtime approaching 48 hrs, halting calculation')
-                    end
-    
-                    iter = iter + 1;
-				end
+					% Test halting criteria (SEM, max iterations limit, timeout)
+                    runSEM = mean(FI.runSEM);
+                    cont = all([runSEM > tol, iter < maxiter]);
 
-				varargout = {FI};
+                    % Impose minimum iteration limit so we get a sensible estimate of SEM
+                    cont = cont | iter < 10;
+                end
+                
+                fprintf('FI completed iter: %d\n', iter)
+                
+                % Trim sample array
+                FI.trim;
+                
+                % Recalculate means cleanly
+				varargout = {FI.mean};
 			otherwise
 				error([method ' is not a valid FI calculation method'])
 			end
@@ -935,13 +827,7 @@ classdef Neurons
 			p = prob;
 		end
 		
-		function q = Q(obj, resp)
-			%if obj.add == 0
-			%	q = cellfun(@(r) obj.a .* obj.R .* (r * r').^obj.alpha, resp, 'UniformOutput', false);
-			%else
-			%	q = cellfun(@(r) (obj.add + obj.a .* obj.R .* (r * r').^obj.alpha).^2, resp, 'UniformOutput', false);
-			%end
-			
+		function q = Q(obj, resp)			
 			q = cellfun(@(r) (obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha).^obj.exponent, resp, 'UniformOutput', false);
 		end
 		
