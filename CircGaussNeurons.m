@@ -49,7 +49,7 @@ classdef CircGaussNeurons < Neurons
 				error('CircGaussNeurons only supports 1-D stimuli at present')
 			end
 
-			stims = repmat(stim.ensemble, obj.popSize, 1);
+			stims = repmat(stim.ensemble, [obj.popSize 1]);
 
 			maxRate = repmat(obj.maxRate, 1, stim.n);
 			backgroundRate = repmat(obj.backgroundRate, 1, stim.n);
