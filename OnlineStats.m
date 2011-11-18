@@ -1,4 +1,4 @@
-classdef OnlineStats
+classdef OnlineStats < handle
     % OnlineStats Online computation of mean, variance and SEM
     %   
     % Implements the algorithm described in:
@@ -8,6 +8,8 @@ classdef OnlineStats
         samples = 0;
         runMean = 0;
         runM2 = 0;
+        runVar = 0;
+        runSEM = 0;
         iter = 0;
     end
     
@@ -26,8 +28,8 @@ classdef OnlineStats
                     l = 1;
                     maxiter = 1;
                 case 2
-                    l = args{1};
-                    maxiter = args{2};
+                    l = varargin{1};
+                    maxiter = varargin{2};
                 otherwise
                     error('Wrong number of arguments')
             end
