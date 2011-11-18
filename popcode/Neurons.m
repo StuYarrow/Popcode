@@ -1,9 +1,9 @@
 classdef Neurons
 	
 	properties
-		dimensionality = uint32(1);
+		dimensionality = 1;
 		preferredStimulus = 0;
-		popSize = uint32(1);
+		popSize = 1;
 		maxRate = 0;
 		backgroundRate = 0;
 		integrationTime = 0;
@@ -37,7 +37,7 @@ classdef Neurons
 			case 7
 				% Standard constructor	
 				if length(varargin{1}) == 1 && isnumeric(varargin{1})
-					obj.dimensionality = uint32(varargin{1});
+					obj.dimensionality = varargin{1};
 				else
 					error([inputname(1) ' is not a valid stimulus dimensionality'])
 				end
@@ -881,7 +881,7 @@ classdef Neurons
 			end
 			
 			obj.preferredStimulus = obj.preferredStimulus(margMask);
-			obj.popSize = uint32(nMarg);
+			obj.popSize = nMarg;
 			
 			if length(obj.maxRate) > 1
 				obj.maxRate = obj.maxRate(margMask);
