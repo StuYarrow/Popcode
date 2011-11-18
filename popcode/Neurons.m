@@ -568,19 +568,33 @@ classdef Neurons
 				end
 
 			case {'randMC' 'quasirandMC'}
+                % Generate offset stimuli
+                stim2 = stim;
+                dTheta = 0.1 .* stim2.width;
+                stim2.ensemble = stim2.ensemble + dTheta;
+                
 				% obj.popSize x stim.n
 				rMean = obj.integrationTime .* obj.meanR(stim);
                 rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+                rMean2 = obj.integrationTime .* obj.meanR(stim2);
+                rMeanCell2 = squeeze(mat2cell(rMean2, obj.popSize, ones(stim2.n, 1)));
 
 				% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
                 QCell1 = obj.Q(rMeanCell);
+                QCell2 = obj.Q(rMeanCell2);
                 
                 % Compute Cholesky decomps of Q matrices
                 cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
                 
                 % Invert Q matrices and compute Cholesky decomps
                 invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
+                invQCell2 = cellfun(@inv, QCell2, 'UniformOutput', false);
                 cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
+                cholInvQCell2 = cellfun(@chol, invQCell2, 'UniformOutput', false);
+                
+                % Concat (stim) and (stim + dTheta) means and covariances
+                rMeanCellDiff = [rMeanCell ; rMeanCell2];
+                cholInvQCellDiff = [cholInvQCell ; cholInvQCell2];
                 
 				% Define function for multivariate gaussian sampling
 				% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
@@ -599,7 +613,7 @@ classdef Neurons
                 while cont
                     iter = iter + 1;
                     
-                    if ~mod(iter, 10)
+                    if ~mod(iter, 100)
                         fprintf('Fisher iter: %d, SEM: %.4g\n', iter, mean(FI.runSEM))
                     end
                     
@@ -609,7 +623,6 @@ classdef Neurons
 						% Generate vector of independent normal random numbers (mu=0, sigma=1)
 						zCell = mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1));
 						% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-						% !!! NOTE NEGATIVE RESPONSES ARE TRUNCATED TO ZERO !!!
 						rCell = cellfun(fRand, rMeanCell, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of {obj.popSize}
                         
 					case 'quasirandMC'
@@ -618,14 +631,11 @@ classdef Neurons
 
                     % log P(r|s)
                     % Calculate response probability densities
-                    lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell, cholInvQCell, {'inv'})); % 1 x stim.n
+                    lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCellDiff, cholInvQCellDiff, {'inv'})); % 1 x stim.n
                     
                     % d/ds log P(r|s)
-					% Find numerical gradient
-					dlpRgS = gradient(lpRgS); % 1 x stim.n
-                    
-					% Divide by bin widths to get derivative
-					dlpRgS = dlpRgS ./ stim.width; % 1 x stim.n
+					% Find derivative
+                    dlpRgS = diff(lpRgS, 1, 1) ./ dTheta;
 
 					% (d/ds log P(r|s))^2
                     FI.appendSample(dlpRgS .^ 2);
