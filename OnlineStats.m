@@ -74,6 +74,11 @@ classdef OnlineStats < handle
         function err = sem(obj)
             err = sqrt(var(obj.samples(1:obj.iter,:), 1) ./ obj.iter);
         end
+        
+        
+        function delta = runDelta(obj)
+            delta = abs(obj.runSEM ./ obj.runMean);
+        end
     end
     
 end
