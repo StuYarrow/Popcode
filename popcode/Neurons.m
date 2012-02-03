@@ -2,10 +2,8 @@ classdef Neurons
 	
 	properties
 		dimensionality = 1;
-		preferredStimulus = 0;
 		popSize = 1;
-		maxRate = 0;
-		backgroundRate = 0;
+		preferredStimulus = 0;
 		integrationTime = 0;
 		distribution = 'Gaussian';
 		a = 1.0;
@@ -20,21 +18,17 @@ classdef Neurons
 		
 		function obj = Neurons(varargin)
 		%	NEURONS Neuron population class constructor.
-		%	n = Neurons(dimensionality, preferredStimulus, maxRate, backgroundRate, integrationTime, variabilityScheme, variabilityOpts)
+		%	n = Neurons(dimensionality, preferredStimuli, integrationTime, variabilityScheme, variabilityOpts)
 		%
 		%	dimensionality - stimulus dimensionality (only 1-D stimuli currently supported)
-		%	maxRate - maximum firing rate (Hz)
-		%	backgroundRate - background (spontaneous) firing rate (Hz)
-		%	variability - a Variability object
+        %   preferred Stimuli - column vector of (N = popsize) characteristic stimuli
 		%	integrationTime - spike counting time per trial
-		%
-		%	maxFiringRate and backgroundFiringRate can be scalars or vectors of length popSize
-
-			%varargin
-			%size(varargin{2})
-                        
+		%	variabilityScheme - the type of variablilty model
+        %   variabiltyOpts - an array of arguments specific to the chosen variability model
+        %
+            
 			switch nargin
-			case 7
+			case 5
 				% Standard constructor	
 				if length(varargin{1}) == 1 && isnumeric(varargin{1})
 					obj.dimensionality = varargin{1};
@@ -42,88 +36,94 @@ classdef Neurons
 					error([inputname(1) ' is not a valid stimulus dimensionality'])
 				end
 				
-				if isnumeric(varargin{2}) & size(varargin{2}, 1) == obj.dimensionality
+				if isnumeric(varargin{2}) && size(varargin{2}, 1) == obj.dimensionality
 					obj.preferredStimulus = varargin{2}';
 					obj.popSize = size(varargin{2}, 2);
 				else
 					error([inputname(2) ' is not a valid preferred stimulus value or vector'])
 				end
 
+				%if length(varargin{3}) == 1 && isnumeric(varargin{3})
+				%	obj.maxRate = double(varargin{3}(ones(obj.popSize, 1)));
+				%elseif length(varargin{3}) == obj.popSize && isvector(varargin{3}) && isnumeric(varargin{3})
+				%	obj.maxRate = reshape(double(varargin{3}), obj.popSize, 1);
+				%else
+				%	error([inputname(3) ' is not a valid maximum firing rate value or vector for population size ' obj.popSize])
+				%end
+
+				%if length(varargin{4}) == 1 && isnumeric(varargin{4})
+				%	obj.backgroundRate = double(varargin{4}(ones(obj.popSize, 1)));
+				%elseif length(varargin{4}) == obj.popSize && isvector(varargin{4}) && isnumeric(varargin{4})
+				%	obj.backgroundRate = reshape(double(varargin{4}), obj.popSize, 1);
+				%else
+				%	error([inputname(4) ' is not a valid background firing rate value or vector for population size ' obj.popSize])
+				%end
+
 				if length(varargin{3}) == 1 && isnumeric(varargin{3})
-					obj.maxRate = double(varargin{3}(ones(obj.popSize, 1)));
-				elseif length(varargin{3}) == obj.popSize && isvector(varargin{3}) && isnumeric(varargin{3})
-					obj.maxRate = reshape(double(varargin{3}), obj.popSize, 1);
+					obj.integrationTime = double(varargin{3});
 				else
-					error([inputname(3) ' is not a valid maximum firing rate value or vector for population size ' obj.popSize])
+					error([inputname(3) ' is not a valid integration time'])
 				end
 
-				if length(varargin{4}) == 1 && isnumeric(varargin{4})
-					obj.backgroundRate = double(varargin{4}(ones(obj.popSize, 1)));
-				elseif length(varargin{4}) == obj.popSize && isvector(varargin{4}) && isnumeric(varargin{4})
-					obj.backgroundRate = reshape(double(varargin{4}), obj.popSize, 1);
-				else
-					error([inputname(4) ' is not a valid background firing rate value or vector for population size ' obj.popSize])
-				end
+				switch lower(varargin{4})
+                    case 'poisson'
+                        obj.distribution = 'Poisson';
+                        obj.a = [];
+                        obj.alpha = [];
+                        obj.R = [];
+                        obj.add = 0.0;
+                        
+                    case 'gaussian-independent'
+                        obj.distribution = 'Gaussian';
+                        obj.a = varargin{5}(1); % need checks
+                        obj.alpha = varargin{5}(2); % need checks
+                        obj.R = eye(obj.popSize);
 
-				if length(varargin{5}) == 1 && isnumeric(varargin{5})
-					obj.integrationTime = double(varargin{5});
-				else
-					error([inputname(5) ' is not a valid integration time'])
-				end
-
-				switch lower(varargin{6})
-				case 'poisson'
-					obj.distribution = 'Poisson';
-					obj.a = [];
-					obj.alpha = [];
-					obj.R = [];
-					obj.add = 0.0;
-				case 'gaussian-independent'
-					obj.distribution = 'Gaussian';
-					obj.a = varargin{7}(1); % need checks
-					obj.alpha = varargin{7}(2); % need checks
-					obj.R = eye(obj.popSize);
-
-					if length(varargin{7}) == 3
-						obj.add = varargin{7}(3); % need checks
-					else
-						obj.add = 0.0;
-					end
-				case 'gaussian-uniform'
-					obj.distribution = 'Gaussian';
-					obj.a = varargin{7}(1); % need checks
-					obj.alpha = varargin{7}(2); % need checks
-					obj.R = varargin{7}(3) * ~eye(obj.popSize) + eye(obj.popSize);
-					obj.add = 0.0;
-				case 'gaussian-exponential'
-					obj.distribution = 'Gaussian';
-					obj.a = varargin{7}(1); % need checks
-					obj.alpha = varargin{7}(2); % need checks
-					c = varargin{7}(3); % need checks
-					rho = varargin{7}(4); % need checks
-					prefDiff = repmat(obj.preferredStimulus, 1, obj.popSize);
-					prefDiff = prefDiff - prefDiff.';
-					obj.R = c .* exp(-abs(double(prefDiff)) ./ rho) .* ~eye(obj.popSize) + eye(obj.popSize);
-					obj.add = 0.0;
-				case 'gaussian-gaussian'
-					obj.distribution = 'Gaussian';
-					obj.a = varargin{7}(1); % need checks
-					obj.alpha = varargin{7}(2); % need checks
-					c = varargin{7}(3); % need checks
-					beta = 1.0 ./ degToRad(varargin{7}(4)).^2; % need checks
-					prefDiff = repmat(obj.preferredStimulus, 1, obj.popSize);
-					prefDiff = prefDiff - prefDiff.';
-					obj.R = c .* exp((cosd(double(prefDiff)) - 1) .* beta) .* ~eye(obj.popSize) + eye(obj.popSize);
-					obj.add = 0.0;
-				case 'cercal'
-					obj.distribution = 'Gaussian';
-					obj.add = varargin{7}(1);
-					obj.a = varargin{7}(2);
-					obj.alpha = 0.5;
-					obj.R = eye(obj.popSize);
-					obj.exponent = 2.0;
-				otherwise
-					error([varargin{6} ' is not a valid variability regime'])
+                        if length(varargin{5}) == 3
+                            obj.add = varargin{5}(3); % need checks
+                        else
+                            obj.add = 0.0;
+                        end
+                        
+                    case 'gaussian-uniform'
+                        obj.distribution = 'Gaussian';
+                        obj.a = varargin{5}(1); % need checks
+                        obj.alpha = varargin{5}(2); % need checks
+                        obj.R = varargin{5}(3) * ~eye(obj.popSize) + eye(obj.popSize);
+                        obj.add = 0.0;
+                        
+                    case 'gaussian-exponential'
+                        obj.distribution = 'Gaussian';
+                        obj.a = varargin{5}(1); % need checks
+                        obj.alpha = varargin{5}(2); % need checks
+                        c = varargin{5}(3); % need checks
+                        rho = varargin{5}(4); % need checks
+                        prefDiff = repmat(obj.preferredStimulus, 1, obj.popSize);
+                        prefDiff = prefDiff - prefDiff.';
+                        obj.R = c .* exp(-abs(double(prefDiff)) ./ rho) .* ~eye(obj.popSize) + eye(obj.popSize);
+                        obj.add = 0.0;
+                        
+                    case 'gaussian-gaussian'
+                        obj.distribution = 'Gaussian';
+                        obj.a = varargin{5}(1); % need checks
+                        obj.alpha = varargin{5}(2); % need checks
+                        c = varargin{5}(3); % need checks
+                        beta = 1.0 ./ degToRad(varargin{5}(4)).^2; % need checks
+                        prefDiff = repmat(obj.preferredStimulus, 1, obj.popSize);
+                        prefDiff = prefDiff - prefDiff.';
+                        obj.R = c .* exp((cosd(double(prefDiff)) - 1) .* beta) .* ~eye(obj.popSize) + eye(obj.popSize);
+                        obj.add = 0.0;
+                        
+                    case 'cercal'
+                        obj.distribution = 'Gaussian';
+                        obj.add = varargin{5}(1);
+                        obj.a = varargin{5}(2);
+                        obj.alpha = 0.5;
+                        obj.R = eye(obj.popSize);
+                        obj.exponent = 2.0;
+                        
+                    otherwise
+                        error([varargin{4} ' is not a valid variability regime'])
 				end
 
 			otherwise
@@ -132,9 +132,6 @@ classdef Neurons
 		end
 		
 		function varargout = mi(obj, method, stim, tol, maxiter)
-			if sum(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'})) == 0
-				error([method ' is not a valid SSI calculation method'])
-			end
 
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(3) ' is not a SimulusEnsemble object'])
@@ -143,34 +140,39 @@ classdef Neurons
 			% obj.popSize x stim.n
 			rMean = obj.integrationTime .* meanR(obj, stim);
 			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+            
+            % Do distribution-specific one-time prep
+            switch obj.distribution
+                case 'Gaussian'
+                    % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+                    QCell1 = obj.Q(rMeanCell);
 
-			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-			QCell1 = obj.Q(rMeanCell);
+                    % Compute lower triangular Chol(Q) for sampling
+                    cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
 
-			% Compute Cholesky decomps of Q matrices
-			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
-			
-			% Invert Q matrices
-			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
-            clear QCell1
-			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
-            clear invQCell
+                    % Compute upper triangular Chol(Q^-1) for fast PDF computation
+                    cholInvQCell = cellfun(@(q) chol(inv(q)), QCell1, 'UniformOutput', false);
+                    clear QCell1
 
-			% Replicate cell arrays across stimulus ensemble
-			%cholInvQCell = repmat(cholInvQCell', [1 stim.n]);
-			%rMeanCella = repmat(rMeanCell', [1 stim.n]);
-			
-			% Define function for multivariate gaussian sampling
-			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-			
-			if obj.truncate
-                fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
-            else
-                fRand = @(m, c, z) m + c * z; % don't truncate
+                    % Define function for multivariate gaussian sampling
+                    % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                    if obj.truncate
+                        fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+                    else
+                        fRand = @(m, c, z) m + c * z; % don't truncate
+                    end
+                    
+                case 'Poisson'
+                    % Nothing to do here
+                    
+                otherwise
+                    error('Unsupported distribution: %s', obj.distribution)
             end
-			
+            
 			iter = 0; % iteration counter
             miEst = OnlineStats(1, maxiter);
+            adaptive = false;
+            tic
             
             cpS = cumsum(stim.pS);
             
@@ -180,7 +182,7 @@ classdef Neurons
                 
                 % Display progress every 100 iterations
 				if ~mod(iter, 100)
-					fprintf('mi()  iter: %d  val: %.4g  SEM: %.4g\n', iter, runMean, runSEM)
+					fprintf('mi()  iter: %d  val: %.4g  rel. error: %.4g\n', iter, miEst.runMean, miEst.runDelta)
 				end
 
 				switch method
@@ -192,42 +194,93 @@ classdef Neurons
 					%s = s(bin);
 
 					% Sample r from response distribution
-					% Generate vector of independent normal random numbers (mu=0, sigma=1)
-					z = randn(obj.popSize, 1);
-					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO depending on value of obj.truncate !!!
-					r = fRand(rMeanCell{bin}, cholQ{bin}, z);
-				end
-
-				% log P(r|s)
-				% Replicate to form a stim.n x stim.n cell array of response vectors
-				rCell = repmat({r}, [stim.n 1]);
-				% Calculate response log probability densities
-                lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                    switch obj.distribution
+                        case 'Gaussian'
+                            % Generate vector of independent normal random numbers (mu=0, sigma=1)
+                            z = randn(obj.popSize, 1);
+                            % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                            % !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO depending on value of obj.truncate !!!
+                            r = fRand(rMeanCell{bin}, cholQ{bin}, z);
+                        case 'Poisson'
+                            % Sample from Poisson distributions
+                            r = poissrnd(rMeanCell{bin});
+                    end
+                    otherwise
+                        error('Unsupported method: %s', method)
+                end
                 
-				% log P(r,s')
-				% Mutiply P(r|s) and P(s) to find joint distribution
-				pS = stim.pS;
-				lpRS = lpRgS + log(pS');
+                if ~adaptive
+                    % log P(r|s)
+                    % Replicate to form a stim.n x stim.n cell array of response vectors
+                    rCell = repmat({r}, [stim.n 1]);
+                    % Calculate response log probability densities
+                    switch obj.distribution
+                        case 'Gaussian'
+                            lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                        case 'Poisson'
+                            lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCell'));
+                    end
 
-				% log P(r)
-				% Calculate marginal by summing over s'
-				lpR = logsumexp(lpRS);
-				
+                    % log P(r,s')
+                    % Mutiply P(r|s) and P(s) to find joint distribution
+                    pS = stim.pS;
+                    lpRS = lpRgS + log(pS');
+
+                    % log P(r)
+                    % Calculate marginal by summing over s'
+                
+                    lpR = logsumexp(lpRS);
+                    lpR_sparse = mean([logsumexp(lpRS(1:2:end) + log(2)), logsumexp(lpRS(2:2:end) + log(2))]);
+                    
+                    % log p(r,s)
+                    lpRS = lpRS(bin);
+
+                    if abs((lpR - lpR_sparse) / lpR) > tol
+                        % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                        adaptive = true;
+                    end
+                end
+                                
+                if adaptive
+                    pR = [0 0 0];
+                    trace = false; % debug flag
+                    fAdInt = @quad; % Use the quad function
+                    
+                    % log p(r,s)
+                    lpRS = log(obj.fpSR(stim.ensemble(bin), r, stim));
+                    
+                    quadTol = exp(lpRS) * tol;
+                    
+                    switch bin
+                        case 1 % Bottom bin - do first 2 bins, remainder
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                        case stim.n % Top bin - do first bin, last bin, remainder
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                        otherwise % Other bins - do one bin either side, remainder above, remainder below
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                    end
+                    
+                    lpR = log(sum(pR));
+                    
+                    
+                end
+                
 				% log P(s)
 				lpS = log(pS(bin));
-
-				% MI in bits (convert from log_e to log_2)
-				lpRS = lpRS(bin);
-                
-                % sample MI
+                                
+                % sample MI in bits (convert from log_e to log_2)
                 miEst.appendSample((lpRS - (lpR + lpS)) ./ log(2));
                 
                 % Test halting criteria (SEM, max iterations limit)
-				cont = miEst.runSEM > tol & iter < maxiter;
+				cont = miEst.runDelta > tol & iter < maxiter;
                 
                 % Impose minimum iteration limit so we get a sensible estimate of SEM
-                cont = cont | iter < 10;
+                 cont = cont | iter < 1000;
             end
             
             % Trim unused samples from buffer
@@ -253,13 +306,7 @@ classdef Neurons
 		end
 		
 		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxiter, timeout)
-            % Initialise wall clock if necessary
-            try
-                dummy = toc;
-            catch
-                tic
-            end
-
+            
 			try
 				% Test sanity of neuron indices
 				obj.preferredStimulus(n);
@@ -276,9 +323,9 @@ classdef Neurons
 			
 			if ~any(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'}))
 				error([method ' is not a valid SSI calculation method'])
-			end
+            end
 
-			if ~isa(stim, 'StimulusEnsemble')
+            if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
             end
 			
@@ -297,42 +344,52 @@ classdef Neurons
 			% obj.popSize x stim.n
 			rMean = obj.integrationTime .* obj.meanR(stim);
 			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+            
+            % Setup for computing marginals
+            if ~isempty(n)
+                % Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
+                margMask = true(obj.popSize, 1);
+                margMask(n) = false;
 
-			% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-			QCell1 = obj.Q(rMeanCell);
+                % Get mean responses for each stimulus ordinate
+                rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
+            end
+            
+            switch obj.distribution
+                case 'Gaussian'
+                    % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+                    QCell1 = obj.Q(rMeanCell);
 
-			% Compute Cholesky decomps of Q matrices
-			cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+                    % Compute lower triangular Chol(Q) for sampling
+                    cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
 
-			% Invert Q matrices and compute Cholesky decomps
-			invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
-			cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
-			
-			if ~isempty(n)
-				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
-				margMask = true(obj.popSize, 1);
-				margMask(n) = false;
-				
-				% Get mean responses for each stimulus ordinate
-				rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
-				
-				% Compute mean response dependent cov matrix stack Q
-				QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
-								
-				% Invert Q matrices and compute Cholesky decomps
-				invQCellMarg = cellfun(@inv, QCellMarg1, 'UniformOutput', false);
-				cholInvQCellMarg = cellfun(@chol, invQCellMarg, 'UniformOutput', false);
-			end
-			
-			% Define function for multivariate gaussian sampling
-			% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-			% Comment as appropriate if you want to truncate at zero
-			% This will mess up the Gaussianity
-			
-			if obj.truncate
-                fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
-            else
-                fRand = @(m, c, z) m + c * z; % don't truncate
+                    % Compute upper triangular Chol(Q^-1) for fast PDF computation
+                    cholInvQCell = cellfun(@(q) chol(inv(q)), QCell1, 'UniformOutput', false);
+                    
+                    if ~isempty(n)
+                        % Compute mean response dependent cov matrix stack Q
+                        QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
+
+                        % Invert Q matrices and compute Cholesky decomps
+                        cholInvQCellMarg = cellfun(@(q) chol(inv(q)), QCellMarg1, 'UniformOutput', false);
+                        clear QCellMarg1
+                    end
+                    
+                    clear QCell1
+                    
+                    % Define function for multivariate gaussian sampling
+                    % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                    if obj.truncate
+                        fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+                    else
+                        fRand = @(m, c, z) m + c * z; % don't truncate
+                    end
+                    
+                case 'Poisson'
+                    % Nothing to be done here
+                    
+                otherwise
+                    error('Unsupported distribution: %s', obj.distribution)
             end
 			
             % Initialise main loop, preallocate MC sample arrays
@@ -345,30 +402,41 @@ classdef Neurons
             IsurMarg = OnlineStats(sMaskN, maxiter);
 			
             % Main MC sampling loop
-			while cont
+            while cont
                 iter = iter + 1;
 
 				if ~mod(iter, 10)
-					fprintf('SSISS iter: %d of %d, SEM: %.4g\n', iter, maxiter, mean(Issi.runSEM))
+					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, mean(Issi.runDelta))
 				end
 
 				switch method
-				case 'randMC'
-					% Sample r from response distribution
-					% Generate vector of independent normal random numbers (mu=0, sigma=1)
-					zCell = mat2cell(randn(obj.popSize, sMaskN), obj.popSize, ones(sMaskN, 1));
-					% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-					% !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO, SEE ABOVE !!!
-					rCell = cellfun(fRand, rMeanCell(sMask), cholQ(sMask), zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
-
-				case 'quasirandMC'
-					% 
-
+                    case 'randMC'
+                        % Sample r from response distribution
+                        switch obj.distribution
+                            case 'Gaussian'
+                                % Generate vector of independent normal random numbers (mu=0, sigma=1)
+                                zCell = mat2cell(randn(obj.popSize, sMaskN), obj.popSize, ones(sMaskN, 1));
+                                % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                                % !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO, SEE ABOVE !!!
+                                rCell = cellfun(fRand, rMeanCell(sMask), cholQ(sMask), zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
+                                
+                            case 'Poisson'
+                                % Sample from Poisson distributions
+                                rCell = cellfun(@poissrnd, rMeanCell(sMask), 'UniformOutput', false);
+                        end
+                        
+                    otherwise
+                        error('Unsupported method: %s', method)
 				end
 
 				% log P(r|s')
 				% Calculate response probability densities
-				lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                switch obj.distribution
+                    case 'Gaussian'
+                        lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                    case 'Poisson'
+                        lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCell'));
+                end
                 
 				% log P(r,s')
 				% Mutiply P(r|s) and P(s) to find joint distribution
@@ -401,7 +469,12 @@ classdef Neurons
 					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
                     
 					% log P(r|s)
-					lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+                    switch obj.distribution
+                        case 'Gaussian'
+                            lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+                        case 'Poisson'
+                            lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCellMarg, rMeanMargCell'));
+                    end
                     
 					% log P(r,s)
 					% Multiply P(r|s) and P(s) to find joint distribution
@@ -430,19 +503,29 @@ classdef Neurons
                 end
                 
                 % Test halting criteria (SEM, max iterations limit, timeout)
-				if exist('margMask', 'var') 
-                    runSEM = mean([Issi.runSEM IssiMarg.runSEM]);
+                if exist('margMask', 'var')
+                    delta = mean([Issi.runDelta IssiMarg.runDelta]);
                 else
-                    runSEM = mean(Issi.runSEM);
+                    delta = mean(Issi.runDelta);
                 end
                 
-                cont = all([runSEM > tol, iter < maxiter, toc < timeout]);
+                cont = delta > tol & iter < maxiter;
+                
+                % If the wall clock is running, check the elapsed time
+                try
+                    cont = cont & toc < timeout;
+                catch
+                end
                 
                 % Impose minimum iteration limit so we get a valid estimate of SEM
                 cont = cont | iter < 10;
-			end
-
-			fprintf('SSISS iter: %d  elapsed time: %.4f seconds\n', iter, toc)
+            end
+            
+            try
+                fprintf('SSISS iter: %d  elapsed time: %.4f seconds\n', iter, toc)
+            catch
+                fprintf('SSISS iter: %d\n', iter)
+            end
             
             % Trim sample arrays
             Issi.trim;
@@ -480,193 +563,62 @@ classdef Neurons
 			otherwise
 				error('Unsupported number of outputs')
 			end
-		end
+        end
 		
 		function varargout = fisher(obj, method, stim, tol, maxiter)
-			
-			if ~isa(stim, 'StimulusEnsemble')
-				error([inputname(4) ' is not a SimulusEnsemble object'])
-            end
+            % Wrapper function for calculating Fisher information
             
-            try
-                dummy = toc;
-            catch
-                tic
-            end
-            
-			switch method
-			case 'analytic'	
-				% Info=Fisher(N, alpha, correlation_type, param_correlation)
-				% compute I_mean, I_cov and I_mean and I_cov if neurons are independent 
-				% when the tuning function is circular normal and correlation is toeplitz
-				% 
-				% PARAMETERS:
-				% -----------
-				% - N is the number of neurons
-				% - f is the tuning curve
-				% - f_prime is the derivative of the tuning curve
-				% - Q is the covariance matrix
-				% - k is the fano factor, now a vector
-				% - k prime is its derivative
-				%
-				% RETURNS:
-				% ---------
-				% Info(1):  I_mean
-				% Info(2):  I_mean_ind if the correlations were set to 0 (same variance)
-				% Info(3):  I_cov
-				% Info(4):  I_cov_ind if the correlations were set to 0
-				% Info(5):  I_mean+I_cov
-				% Info(6):  I_SQE
-
-				% pseries@gatsby.ucl.ac.uk  2/20/2005
-				% s.yarrow@ed.ac.uk 2008-2011
-
-				f = obj.integrationTime .* meanR(obj, stim);
-				f_prime = obj.integrationTime .* dMeanR(obj, stim);
-
-				g0 = f_prime ./ f;
-
-				% ==============================================================
-				% Correlation matrix, Covariance matrix, inverse and derivative.
-				% Fourier tranform (eigenvalues)
-				% ==============================================================
-
-				fCell = squeeze(mat2cell(f, obj.popSize, ones(stim.n, 1)));
-				f_primeCell = squeeze(mat2cell(f_prime, obj.popSize, ones(stim.n, 1)));
-				g0Cell = squeeze(mat2cell(g0, obj.popSize, ones(stim.n, 1)));
-				QCell1 = obj.Q(fCell);
-				Q_inv = cellfun(@inv, QCell1, 'UniformOutput', false); % inverse
-				k = repmat({obj.a(ones(obj.popSize,1))}, [1 stim.n]);
-				k_prime = repmat({zeros(obj.popSize,1)}, [1, stim.n]);
-				
-				fQ_prime = @(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q;
-				Q_prime = cellfun(fQ_prime, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
-
-				% ==============================================================
-				% Fisher Information
-				% I_mean, I_cov and approximation of I_cov
-				% ==============================================================
-
-				if obj.popSize > 1
-					Info(1,:) = cellfun(@(fp, qi) fp' * qi * fp, f_primeCell, Q_inv);         % direct method
-					%Info(2) = cellfun(@(fp, di) fp * di * fp', f_primeCell, D_inv);
-				else
-					Info(1,:) = cellfun(@(fp, q) fp.^2 / q, f_primeCell, QCell1);
-				end
-
-				Info(3,:) = cellfun(@(qp, qi) 0.5 * trace(qp * qi * qp * qi), Q_prime, Q_inv);  % direct method for Icov
-
-				Info(5,:) = Info(1,:) + Info(3,:);                         % Fisher
-                
-				switch nargout
-				case 1
-					varargout = {Info(5,:)};
-				case 2
-					varargout = {Info(1,:) Info(3,:)};
-				otherwise
-					error('Wrong number of outputs')
-				end
-
-			case {'randMC' 'quasirandMC'}
-                % Generate offset stimuli
-                stim2 = stim;
-                dTheta = 0.1 .* stim2.width;
-                stim2.ensemble = stim2.ensemble + dTheta;
-                
-				% obj.popSize x stim.n
-				rMean = obj.integrationTime .* obj.meanR(stim);
-                rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
-                rMean2 = obj.integrationTime .* obj.meanR(stim2);
-                rMeanCell2 = squeeze(mat2cell(rMean2, obj.popSize, ones(stim2.n, 1)));
-
-				% Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
-                QCell1 = obj.Q(rMeanCell);
-                QCell2 = obj.Q(rMeanCell2);
-                
-                % Compute Cholesky decomps of Q matrices
-                cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
-                
-                % Invert Q matrices and compute Cholesky decomps
-                invQCell = cellfun(@inv, QCell1, 'UniformOutput', false);
-                invQCell2 = cellfun(@inv, QCell2, 'UniformOutput', false);
-                cholInvQCell = cellfun(@chol, invQCell, 'UniformOutput', false);
-                cholInvQCell2 = cellfun(@chol, invQCell2, 'UniformOutput', false);
-                
-                % Concat (stim) and (stim + dTheta) means and covariances
-                rMeanCellDiff = [rMeanCell ; rMeanCell2];
-                cholInvQCellDiff = [cholInvQCell ; cholInvQCell2];
-                
-				% Define function for multivariate gaussian sampling
-				% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-                
-				if obj.truncate
-				    fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
-				else
-				    fRand = @(m, c, z) m + c * z; % don't truncate
-                end
-                
-				iter = 0;
-                cont = true;
-                
-                FI = OnlineStats(stim.n, maxiter);
-                
-                while cont
-                    iter = iter + 1;
-                    
-                    if ~mod(iter, 100)
-                        fprintf('Fisher iter: %d, SEM: %.4g\n', iter, mean(FI.runSEM))
+            switch method
+                case 'analytic'
+                    switch obj.distribution
+                        case 'Gaussian'
+                            [J_mean, J_cov] = obj.fisher_analytic_gauss(stim);
+                            
+                            switch nargout
+                                case 0
+                                    varargout = {J_mean + J_cov};
+                                case 1
+                                    varargout = {J_mean + J_cov};
+                                case 2
+                                    varargout = {J_mean J_cov};
+                                otherwise
+                                    error('Wrong number of outputs')
+                            end
+                            
+                        case 'Poisson'
+                            J = obj.fisher_analytic_poiss(stim);
+                            
+                            if nargout == 1
+                                varargout = {J};
+                            else
+                                error('Wrong number of outputs')
+                            end
+                            
+                        otherwise
+                            error('Unsupported distribution: %s', obj.distribution)
                     end
                     
-					switch method
-					case 'randMC'
-						% Sample r from response distribution
-						% Generate vector of independent normal random numbers (mu=0, sigma=1)
-						zCell = mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1));
-						% Multiply by Cholesky decomposition of cov matrix Q, and add in mean
-						rCell = cellfun(fRand, rMeanCell, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of {obj.popSize}
-                        
-					case 'quasirandMC'
-						%
+                case 'randMC'
+                    [J samples] = obj.fisher_mc(method, stim, tol, maxiter);
+                    
+                    switch nargout
+                        case 1
+                            varargout = {J};
+                        case 2
+                            varargout = {J samples};
+                        otherwise
+                            error('Wrong number of outputs')
                     end
-
-                    % log P(r|s)
-                    % Calculate response probability densities
-                    lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCellDiff, cholInvQCellDiff, {'inv'})); % 1 x stim.n
                     
-                    % d/ds log P(r|s)
-					% Find derivative
-                    dlpRgS = diff(lpRgS, 1, 1) ./ dTheta;
-
-					% (d/ds log P(r|s))^2
-                    FI.appendSample(dlpRgS .^ 2);
-                    
-					% Test halting criteria (SEM, max iterations limit, timeout)
-                    runSEM = mean(FI.runSEM);
-                    cont = all([runSEM > tol, iter < maxiter]);
-
-                    % Impose minimum iteration limit so we get a sensible estimate of SEM
-                    cont = cont | iter < 10;
-                end
-                
-                fprintf('FI completed iter: %d\n', iter)
-                
-                % Trim sample array
-                FI.trim;
-                
-                % Recalculate means cleanly
-				varargout = {FI.mean};
-			otherwise
-				error([method ' is not a valid FI calculation method'])
-			end
+                otherwise
+                    error('"%s" is not a valid FI calculation method', method)
+            end
 		end
 		
-		function varargout = margFisher(obj, nMarg, method, stim, tol, varargin)
-			if isempty(varargin)
-				option = 'raw';
-			else
-				option = varargin{1};
-			end
-
+		function [fullFisher remainderFisher] = margFisher(obj, nMarg, method, stim, tol)
+            % Function for calculating fisher of population with and
+            % without neuron(s) of interest
+            
 			if ~isa(stim, 'StimulusEnsemble')
 				error([inputname(4) ' is not a SimulusEnsemble object'])
 			end
@@ -679,49 +631,63 @@ classdef Neurons
 			
 			% FI of remaining neurons
 			remainderFisher = fisher(remainingNeurons, method, stim, tol);
-			
-			switch option
-			case 'diff'
-				varargout = {fullFisher - remainderFisher};
-			case 'rootDiff'
-				varargout = {sqrt(fullFisher - remainderFisher)};
-			case 'diffRoot'
-				varargout = {sqrt(fullFisher) - sqrt(remainderFisher)};
-			case 'invDiffInv'
-				varargout = {fullFisher .* remainderFisher ./ (remainderFisher - fullFisher)};
-			case 'diffSD'
-				varargout = {(fullFisher.^-0.5 - remainderFisher.^-0.5).^-2};
-			case 'raw'
-				varargout = {fullFisher remainderFisher};
-			otherwise
-				error('Invalid marginal fisher option')
-			end
 		end
 		
 		function ifish = Ifisher(obj, stim)
-			fish = obj.fisher('analytic', stim, 0);
-			pS = stim.pS;
-			zOrds = find(fish == 0);
-			
-			if ~isempty(zOrds)
-				fish(zOrds) = [];
-				pS(zOrds) = [];
-				pS = pS ./ sum(pS);
-			end
-			
-            ifish = stim.entropy - 0.5 .* sum(pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(fish)));
+            % Function for computing I_Fisher, see:
+            %
+            % Brunel N, Nadal J (1998)
+            % Mutual information, Fisher information, and population coding.
+            % Neural Comput 10:1731?1757.
+            
+            if false
+                % Fisher information
+                fish = obj.fisher('analytic', stim, 0);
+
+                % Ignore zero Fisher information values
+                zeroJ = find(fish == 0);
+                pS = stim.pS;
+
+                if ~isempty(zeroJ)
+                    fish(zeroJ) = [];
+                    pS(zeroJ) = [];
+                    pS = pS ./ sum(pS);
+                end
+                
+                ifish = stim.entropy - 0.5 .* sum(pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(fish)));
+            else
+                ifish = stim.entropy - 0.5 .* quad(@(s) stim.pSint(s) .* (1.0 + log2(pi) + log2(exp(1)) - log2(obj.fisher('analytic', s, 0))), stim.ensemble(1) - diff(stim.ensemble(1:2)), stim.ensemble(end));
+            end
 		end
 		
-		function ifish = mIfisher(obj, nMarg, stim)
-			[fullFI remFI] = obj.margFisher(nMarg, 'analytic', stim, 0, 'raw');
-
-            ifishFull = stim.entropy - 0.5 .* sum(stim.pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(fullFI)));
-            ifishRem = stim.entropy - 0.5 .* sum(stim.pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(remFI)));
-
-			ifish = ifishFull - ifishRem;
+		function varargout = mIfisher(obj, nMarg, stim)
+            % Function for computing the marginal I_Fisher
+            
+            % Get whole-population I_Fisher
+            ifishFull = obj.Ifisher(stim);
+            
+            % Create population of remaining neurons
+			remainingNeurons = obj.remove(nMarg);
+            
+            % Compute remainder I_Fisher
+            ifishRem = remainingNeurons.Ifisher(stim);
+            
+            switch nargout
+                case 1
+                    varargout = {ifishFull - ifishRem};
+                case 2
+                    varargout = {ifishFull ifishRem};
+                otherwise
+                    error('Wrong number of outputs')
+            end
 		end
 		
 		function ssif = SSIfisher(obj, n, fisherMethod, stim, tol)
+            % Function for computing SSI_Fisher, see:
+            %
+            % Yarrow S, Challis E, Series P (2012)
+            % Fisher and Shannon information in finite neural populations.
+            % Neural Comput (in review).
 		
 			% S stimulus
 			sMat = repmat(stim.ensemble, [stim.n 1]);
@@ -743,7 +709,7 @@ classdef Neurons
 			end
 			
 			if ~isempty(n)
-				[fullFI remFI] = obj.margFisher(n, fisherMethod, stim, tol, 'raw');
+				[fullFI remFI] = obj.margFisher(n, fisherMethod, stim, tol);
 				
 				% Compute SSIfisher excluding cells of interest
 				% sigma(s)
@@ -808,36 +774,8 @@ classdef Neurons
 				ssif = ssifFull;
 			end
 		end
-		
-		function obj = gainadapt(obj, width, amnt, centre)
-			obj.maxRate = obj.maxRate .* (1 - amnt .* exp(-(1.0 ./ degToRad(width).^2) .* (1 - cosd(double(obj.preferredStimulus - centre)))));
-		end
-		
-		function p = pOfR(obj, response, stimulusSet)
-			if ~(isnumeric(response) && isvector(response) && length(response) == obj.popSize)
-				error([inputname(2) ' is not a valid response'])
-			end
-
-			if ~(isnumeric(stimulusSet) && size(stimulusSet, 1) == obj.dimensionality)
-				error([inputname(3) ' is not a valid stimulus set'])
-			end
-
-			r = repmat(reshape(response, length(response), 1), 1, length(stimulusSet));
-			rMean = meanR(obj, stimulusSet);
-			r = r - rMean;
-			
-			prob = zeros(1,length(stimulusSet));
-			
-			for s = 1 : length(stimulusSet)
-				Q = obj.varA * obj.varR .* (rMean(:,s) * rMean(:,s)') .^ obj.varAlpha;
-				normFactor = 1.0 / ((2.0 * pi)^(obj.popSize / 2.0) * det(Q)^0.5);
-				prob(1,s) = normFactor * exp(r(:,s)' * (Q \ r(:,s)));
-			end
-
-			p = prob;
-		end
-		
-		function q = Q(obj, resp)			
+				
+		function q = Q(obj, resp)
 			q = cellfun(@(r) (obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha).^obj.exponent, resp, 'UniformOutput', false);
 		end
 		
@@ -851,25 +789,26 @@ classdef Neurons
 			end
 
 			prefStr = char(obj.preferredStimulus);
-			maxRateStr = char(obj.maxRate);
-			backgroundRateStr = char(obj.backgroundRate);
+			%maxRateStr = char(obj.maxRate);
+			%backgroundRateStr = char(obj.backgroundRate);
 			rStr = display(obj.R);
 
 			formatStr = ['Population size: %.0f\n'...
 						 'Stimulus dimensionality: %.0f\n'...
 						 'Preferred stimuli:\n'...
 						  prefStr '\n'...
-						 'Maximum firing rate (Hz):\n'...
-						  maxRateStr '\n'...
-						 'Background firing rate (Hz):\n'...
-						  backgroundRateStr '\n'...
+						 %'Maximum firing rate (Hz):\n'...
+						 % maxRateStr '\n'...
+						 %'Background firing rate (Hz):\n'...
+						 % backgroundRateStr '\n'...
 						 'Integration time: %.3f s\n'...
 						 'Variability distribution: %s\n'...
 						 'Variability coefficient a: %.3f\n'...
 						 'Variability exponent alpha: %.3f\n'...
-						 'Correlation matrix:\n'];
+						 'Correlation matrix:\n'...
+                         '%s\n'];
 
-			retStr = strvcat(sprintf(formatStr, obj.popSize, double(obj.dimensionality), obj.integrationTime, obj.distribution, obj.a, obj.alpha), rStr);
+			retStr = sprintf(formatStr, obj.popSize, double(obj.dimensionality), obj.integrationTime, obj.distribution, obj.a, obj.alpha, rStr);
 		end
 		
 		function retVal = tcplot(obj, stim)
@@ -893,14 +832,6 @@ classdef Neurons
 			obj.preferredStimulus = obj.preferredStimulus(margMask);
 			obj.popSize = nMarg;
 			
-			if length(obj.maxRate) > 1
-				obj.maxRate = obj.maxRate(margMask);
-			end
-			
-			if length(obj.backgroundRate) > 1
-				obj.backgroundRate = obj.backgroundRate(margMask);
-			end
-			
 			Rmask = logical((margMask+0) * (margMask+0)');
 			obj.R = reshape(obj.R(Rmask), [nMarg nMarg]);
 			
@@ -915,6 +846,231 @@ classdef Neurons
 					
 		end
 		
-	end
+    end
+    
+    
+    methods (Access = protected)
+        
+        function [J_mean, J_cov] = fisher_analytic_gauss(obj, stim)
+            % Info=Fisher(N, alpha, correlation_type, param_correlation)
+            % compute I_mean, I_cov and I_mean and I_cov if neurons are independent 
+            % when the tuning function is circular normal and correlation is toeplitz
+            % 
+            % PARAMETERS:
+            % -----------
+            % - N is the number of neurons
+            % - f is the tuning curve
+            % - f_prime is the derivative of the tuning curve
+            % - Q is the covariance matrix
+            % - k is the fano factor, now a vector
+            % - k prime is its derivative
+            %
+            % RETURNS:
+            % ---------
+            % Info(1):  I_mean
+            % Info(2):  I_mean_ind if the correlations were set to 0 (same variance)
+            % Info(3):  I_cov
+            % Info(4):  I_cov_ind if the correlations were set to 0
+            % Info(5):  I_mean+I_cov
+            % Info(6):  I_SQE
+
+            % pseries@gatsby.ucl.ac.uk  2/20/2005
+            % s.yarrow@ed.ac.uk 2008-2011
+
+            f = obj.integrationTime .* obj.meanR(stim);
+            f_prime = obj.integrationTime .* obj.dMeanR(stim);
+
+            g0 = f_prime ./ f;
+
+            % ==============================================================
+            % Correlation matrix, Covariance matrix, inverse and derivative.
+            % Fourier tranform (eigenvalues)
+            % ==============================================================
+            
+            if isa(stim, 'StimulusEnsemble')
+                nStim = stim.n;
+            else
+                nStim = length(stim);
+            end
+            
+            fCell = squeeze(mat2cell(f, obj.popSize, ones(nStim, 1)));
+            f_primeCell = squeeze(mat2cell(f_prime, obj.popSize, ones(nStim, 1)));
+            g0Cell = squeeze(mat2cell(g0, obj.popSize, ones(nStim, 1)));
+            QCell1 = obj.Q(fCell);
+            Q_inv = cellfun(@inv, QCell1, 'UniformOutput', false); % inverse
+            k = repmat({obj.a(ones(obj.popSize,1))}, [1 nStim]);
+            k_prime = repmat({zeros(obj.popSize,1)}, [1, nStim]);
+
+            fQ_prime = @(q, kk, kp, gz) obj.alpha * (diag(gz) * q + q * diag(gz)) + (diag(kp ./ kk)) * q;
+            Q_prime = cellfun(fQ_prime, QCell1, k, k_prime, g0Cell, 'UniformOutput', false); % derivative
+
+            % ==============================================================
+            % Fisher Information
+            % J_mean, J_cov
+            % (J = J_mean + J_cov)
+            % ==============================================================
+
+            if obj.popSize > 1
+                J_mean = cellfun(@(fp, qi) fp' * qi * fp, f_primeCell, Q_inv);         % direct method
+                %Info(2) = cellfun(@(fp, di) fp * di * fp', f_primeCell, D_inv);
+            else
+                J_mean = cellfun(@(fp, q) fp.^2 / q, f_primeCell, QCell1);
+            end
+
+            J_cov = cellfun(@(qp, qi) 0.5 * trace(qp * qi * qp * qi), Q_prime, Q_inv);  % direct method for Icov
+        end
+        
+        function J = fisher_analytic_poiss(obj, stim)
+            % TC and TC derivative
+            f = obj.meanR(stim);
+            f_prime = obj.dMeanR(stim);
+            
+            % Fisher information, see:
+            % Bethge M, Rotermund D, Pawelzik K (2002)
+            % Optimal short-term population coding: when Fisher information fails.
+            % Neural Comput 14:2317?2351.
+            %
+            J = obj.integrationTime .* sum(f_prime.^2 ./ f, 1);
+        end
+        
+        function [J FI] = fisher_mc(obj, method, stim, tol, maxiter)
+            % Generate offset stimuli
+            stim2 = stim;
+            dTheta = 0.1 .* stim2.width;
+            stim2.ensemble = stim2.ensemble + dTheta;
+
+            % obj.popSize x stim.n
+            rMean1 = obj.integrationTime .* obj.meanR(stim);
+            rMeanCell1 = squeeze(mat2cell(rMean1, obj.popSize, ones(stim.n, 1)));
+            rMean2 = obj.integrationTime .* obj.meanR(stim2);
+            rMeanCell2 = squeeze(mat2cell(rMean2, obj.popSize, ones(stim2.n, 1)));
+            
+            % Concat (stim) and (stim + dTheta) mean arrays
+            rMeanCellDiff = [rMeanCell1 ; rMeanCell2];
+            
+            % Do distribution-specific setup
+            switch obj.distribution
+                case 'Gaussian'
+                    % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+                    QCell1 = obj.Q(rMeanCell1);
+                    QCell2 = obj.Q(rMeanCell2);
+
+                    % Compute Cholesky decomps of Q matrices
+                    cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+
+                    % Invert Q matrices and compute Cholesky decomps
+                    cholInvQCell1 = cellfun(@(q) chol(inv(q)), QCell1, 'UniformOutput', false);
+                    cholInvQCell2 = cellfun(@(q) chol(inv(q)), QCell2, 'UniformOutput', false);
+                    clear QCell1 QCell2
+
+                    % Concat (stim) and (stim + dTheta) chol(Q^-1) arrays
+                    cholInvQCellDiff = [cholInvQCell1 ; cholInvQCell2];
+                    clear cholInvQCell1 cholInvQCell2
+
+                    % Define function for multivariate gaussian sampling
+                    % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                    if obj.truncate
+                        fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+                    else
+                        fRand = @(m, c, z) m + c * z; % don't truncate
+                    end
+                    
+                case 'Poisson'
+                    % Nothing to do here
+                    
+                otherwise
+                    error('Unsupported distribution: %s', obj.distribution)
+            end
+
+            iter = 0;
+            cont = true;
+
+            FI = OnlineStats(stim.n, maxiter);
+
+            while cont
+                iter = iter + 1;
+
+                if ~mod(iter, 100)
+                    fprintf('Fisher iter: %d, rel. error: %.4g\n', iter, mean(FI.runDelta))
+                end
+
+                switch method
+                    case 'randMC'
+                        % Sample r from response distribution
+                        switch obj.distribution
+                            case 'Gaussian'
+                                % Generate vector of independent normal random numbers (mu=0, sigma=1)
+                                zCell = mat2cell(randn(obj.popSize, stim.n), obj.popSize, ones(stim.n, 1));
+                                % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                                rCell = cellfun(fRand, rMeanCell1, cholQ, zCell, 'UniformOutput', false); % stim.n cell array of {obj.popSize}
+                                
+                            case 'Poisson'
+                                % Sample from Poisson
+                                rCell = cellfun(@poissrnd, rMeanCell1, 'UniformOutput', false);
+                        end
+                        
+                    otherwise
+                        error('Unsupported method: %s', method)
+                end
+
+                % log P(r|s)
+                % Calculate response probability densities
+                switch obj.distribution
+                    case 'Gaussian'
+                        lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCellDiff, cholInvQCellDiff, {'inv'})); % 1 x stim.n
+                    case 'Poisson'
+                        lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCellDiff)); % 1 x stim.n
+                end
+
+                % d/ds log P(r|s)
+                % Find derivative
+                dlpRgS = diff(lpRgS, 1, 1) ./ dTheta;
+
+                % (d/ds log P(r|s))^2
+                FI.appendSample(dlpRgS .^ 2);
+
+                % Test halting criteria (SEM, max iterations limit, timeout)
+                delta = mean(FI.runDelta);
+                cont = all([delta > tol, iter < maxiter]);
+
+                % Impose minimum iteration limit so we get a sensible estimate of SEM
+                cont = cont | iter < 10;
+            end
+
+            fprintf('FI completed iter: %d\n', iter)
+
+            % Trim sample array
+            FI.trim;
+            
+            % Return output
+            J = FI.mean;
+        end
+        
+        function pSR = fpSR(obj, s, r, stim)
+            % mean response given s
+            rMean = obj.integrationTime .* meanR(obj, s);
+            rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(length(s), 1)));
+            rCell = repmat({r}, [length(s) 1]);
+            
+            switch obj.distribution
+            case 'Gaussian'
+                % covariance matrix
+                Q = obj.Q(rMeanCell);
+                
+                % log p(r|s)
+                lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', {[]}, Q'))';
+            case 'Poisson'
+                % log p(r|s)
+                lpRgS = sum(poisspdfln(r, rMean));
+            end
+            
+            % log p(s) via linear piecewise interpolation on stimulus distribution
+            lpS = log(stim.pSint(s));
+            
+            % p(s,r) = exp(log p(s) + log p(r|s))
+            pSR = exp(lpS + lpRgS);
+        end
+        
+    end
 
 end
