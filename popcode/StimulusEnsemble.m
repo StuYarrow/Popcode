@@ -5,6 +5,8 @@ classdef StimulusEnsemble
         ensemble = [];
         width = [];
         pS = [];
+        lowerLimit = 0;
+        upperLimit = 0;
     end
     
     methods		
@@ -20,6 +22,9 @@ classdef StimulusEnsemble
                     obj.ensemble = [-modulo/2 + spacing : spacing : modulo/2];
                     obj.width = spacing * ones(1, number);
                     obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
+                    
+                    obj.lowerLimit = -modulo/2;
+                    obj.upperLimit = modulo/2;
 				otherwise
 					error([varargin{1} ' is not a valid option with three args'])
 				end
@@ -36,6 +41,9 @@ classdef StimulusEnsemble
                     obj.ensemble = [bottom : spacing : top];
                     obj.width = diff(obj.ensemble);
                     obj.width = 0.5 * ([obj.width(1) obj.width] + [obj.width obj.width(end)]);
+                    
+                    obj.lowerLimit = bottom;
+                    obj.upperLimit = top;
 
                 otherwise
                     error([strvarargin{1} ' is not a valid option'])
@@ -77,7 +85,15 @@ classdef StimulusEnsemble
 	
 		function h = entropy(obj)
 			h = -sum(obj.pS .* log2(obj.pS));
-		end
+        end
+        
+        
+        function p = pSint(obj, s)
+            % piecewise linear interpolation
+            pS = [obj.pS(end) obj.pS];
+            ens = [obj.ensemble(1) - 1, obj.ensemble];
+            p = interp1q(ens(:), pS', s(:))';
+        end
         
 	end
 end
