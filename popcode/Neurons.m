@@ -237,6 +237,7 @@ classdef Neurons
 
                     if abs((lpR - lpR_sparse) / lpR) > tol
                         % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                        fprintf('Switching to adaptive integration algorithm.\n')
                         adaptive = true;
                     end
                 end
@@ -247,27 +248,30 @@ classdef Neurons
                     fAdInt = @quad; % Use the quad function
                     
                     % log p(r,s)
-                    lpRS = log(obj.fpSR(stim.ensemble(bin), r, stim));
+                    lpRS = obj.flpSR(stim.ensemble(bin), r, stim);
                     
-                    quadTol = exp(lpRS) * tol;
+                    % Log space offset for numerical stability
+                    quadOffset = round(-lpRS);
+                    
+                    % Absolute tolerance for integration
+                    %quadTol = exp(lpRS) * tol;
+                    quadTol = tol;
                     
                     switch bin
                         case 1 % Bottom bin - do first 2 bins, remainder
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                         case stim.n % Top bin - do first bin, last bin, remainder
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
-                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
                         otherwise % Other bins - do one bin either side, remainder above, remainder below
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
-                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR(s, r, stim), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                     end
                     
-                    lpR = log(sum(pR));
-                    
-                    
+                    lpR = log(sum(pR)) - quadOffset;
                 end
                 
 				% log P(s)
@@ -275,6 +279,10 @@ classdef Neurons
                                 
                 % sample MI in bits (convert from log_e to log_2)
                 miEst.appendSample((lpRS - (lpR + lpS)) ./ log(2));
+                
+                if isnan(miEst.samples(iter))
+                    foo
+                end
                 
                 % Test halting criteria (SEM, max iterations limit)
 				cont = miEst.runDelta > tol & iter < maxiter;
@@ -640,7 +648,7 @@ classdef Neurons
             % Mutual information, Fisher information, and population coding.
             % Neural Comput 10:1731?1757.
             
-            if false
+            if true
                 % Fisher information
                 fish = obj.fisher('analytic', stim, 0);
 
@@ -817,29 +825,30 @@ classdef Neurons
 			retVal = plot(stims, r(:,ind));
 		end
 		
-		function varargout = remove(obj, nMarg)
+		function [obj, varargout] = remove(obj, nMarg)
 			if ~isempty(nMarg)
 				% Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
-				margMask = ones(obj.popSize, 1);
+				margMask = true(obj.popSize, 1);
 				margMask(nMarg) = false;
 				% Number of remaining neurons
-				nMarg = sum(margMask);
-				margMask = logical(margMask);
+				newPopSize = sum(double(margMask));
 			else
 				error('Must specify index of a neuron or neurons')
 			end
 			
 			obj.preferredStimulus = obj.preferredStimulus(margMask);
-			obj.popSize = nMarg;
+			obj.popSize = newPopSize;
 			
-			Rmask = logical((margMask+0) * (margMask+0)');
-			obj.R = reshape(obj.R(Rmask), [nMarg nMarg]);
+            if ~isempty(obj.R)
+                Rmask = logical((margMask+0) * (margMask+0)');
+                obj.R = reshape(obj.R(Rmask), [newPopSize newPopSize]);
+            end
 			
 			switch nargout
 			case 1
-				varargout = {obj};
+				varargout = {};
 			case 2
-				varargout = {obj margMask};
+				varargout = {margMask};
 			otherwise
 				error('Wrong number of outputs')
 			end
@@ -1046,7 +1055,7 @@ classdef Neurons
             J = FI.mean;
         end
         
-        function pSR = fpSR(obj, s, r, stim)
+        function lpSR = flpSR(obj, s, r, stim)
             % mean response given s
             rMean = obj.integrationTime .* meanR(obj, s);
             rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(length(s), 1)));
@@ -1061,14 +1070,23 @@ classdef Neurons
                 lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', {[]}, Q'))';
             case 'Poisson'
                 % log p(r|s)
-                lpRgS = sum(poisspdfln(r, rMean));
+                %lpRgS = sum(poisspdfln(r, rMean));
+                lpRgS = cell2mat(cellsxfun(@(a,b) sum(poisspdfln(a, b)), rCell, rMeanCell'))';
             end
             
             % log p(s) via linear piecewise interpolation on stimulus distribution
             lpS = log(stim.pSint(s));
             
             % p(s,r) = exp(log p(s) + log p(r|s))
-            pSR = exp(lpS + lpRgS);
+            lpSR = lpS + lpRgS;
+        end
+        
+        function pSR = fpSR(obj, s, r, stim)
+            pSR = exp(flpSR(obj, s, r, stim));
+        end
+        
+        function pSR = fpSR_offset(obj, s, r, stim, logOffset)
+            pSR = exp(flpSR(obj, s, r, stim) + logOffset);
         end
         
     end
