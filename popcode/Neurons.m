@@ -172,7 +172,6 @@ classdef Neurons
 			iter = 0; % iteration counter
             miEst = OnlineStats(1, maxiter);
             adaptive = false;
-            tic
             
             cpS = cumsum(stim.pS);
             
@@ -228,7 +227,6 @@ classdef Neurons
 
                     % log P(r)
                     % Calculate marginal by summing over s'
-                
                     lpR = logsumexp(lpRS);
                     lpR_sparse = mean([logsumexp(lpRS(1:2:end) + log(2)), logsumexp(lpRS(2:2:end) + log(2))]);
                     
@@ -254,7 +252,6 @@ classdef Neurons
                     quadOffset = round(-lpRS);
                     
                     % Absolute tolerance for integration
-                    %quadTol = exp(lpRS) * tol;
                     quadTol = tol;
                     
                     switch bin
@@ -342,12 +339,17 @@ classdef Neurons
 				sMask = false(stim.n, 1);
 				sMask(stimOrds) = true;
 				sMaskN = sum(sMask + 0);
+                stimOrds = find(sMask);
 			else
 				sMask = true(stim.n, 1);
 				sMaskN = stim.n;
 				stimOrds = 1:stim.n;
-			end
+            end
 			
+            % Indexes for quickly pulling out p(r|s'=s)
+            distPeaks = logical(eye(stim.n));
+            distPeaks = distPeaks(:,sMask);
+            
 			% Get mean responses for each stimulus ordinate
 			% obj.popSize x stim.n
 			rMean = obj.integrationTime .* obj.meanR(stim);
@@ -363,6 +365,7 @@ classdef Neurons
                 rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
             end
             
+            % Do distribution-specific initialisation
             switch obj.distribution
                 case 'Gaussian'
                     % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
@@ -403,6 +406,7 @@ classdef Neurons
             % Initialise main loop, preallocate MC sample arrays
 			iter = 0;
 			cont = true;
+            adaptive = false;
             
             Issi = OnlineStats(sMaskN, maxiter);
             Isur = OnlineStats(sMaskN, maxiter);
@@ -415,8 +419,8 @@ classdef Neurons
 
 				if ~mod(iter, 10)
 					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, mean(Issi.runDelta))
-				end
-
+                end
+                
 				switch method
                     case 'randMC'
                         % Sample r from response distribution
@@ -435,31 +439,82 @@ classdef Neurons
                         
                     otherwise
                         error('Unsupported method: %s', method)
-				end
-
-				% log P(r|s')
-				% Calculate response probability densities
-                switch obj.distribution
-                    case 'Gaussian'
-                        lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
-                    case 'Poisson'
-                        lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCell'));
                 end
                 
-				% log P(r,s')
-				% Mutiply P(r|s) and P(s) to find joint distribution
-				lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
+                if ~adaptive
+                    % log P(r|s')
+                    % Calculate response probability densities
+                    switch obj.distribution
+                        case 'Gaussian'
+                            lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                        case 'Poisson'
+                            lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCell'));
+                    end
 
-				% log P(r)
-				% Calculate marginal by summing over s'
-				lpR = logsumexp(lpRS, 1);
-				
+                    % log P(r,s')
+                    % Mutiply P(r|s) and P(s) to find joint distribution
+                    lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
+
+                    % log P(r)
+                    % Calculate marginal by summing over s'
+                    lpR = logsumexp(lpRS, 1);
+
+                    % Check integration accuracy
+                    lpR_sparse = mean([logsumexp(lpRS(1:2:end,:) + log(2)); logsumexp(lpRS(2:2:end,:) + log(2))]);
+                    
+                    if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
+                        % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                        fprintf('Switching to adaptive integration algorithm.\n')
+                        adaptive = true;
+                    end
+                end
+                
+                if adaptive
+                    trace = false; % debug flag
+                    fAdInt = @quad; % Use the quad function
+                    
+                    % log p(r,s')
+                    lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim), num2cell(stim.ensemble)', rCell));
+                    
+                    % Log space offset for numerical stability
+                    quadOffset = -lpRS(distPeaks);
+                    
+                    % Absolute tolerance for integration
+                    quadTol = tol * 1e-2;
+                    
+                    for si = 1 : sMaskN
+                        pR = [0 0 0];
+                        bin = stimOrds(si);
+                        r = rCell{si};
+                        
+                        switch bin
+                            case 1 % Bottom bin - do first 2 bins, remainder
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            case stim.n % Top bin - do first bin, last bin, remainder
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                            otherwise % Other bins - do one bin either side, remainder above, remainder below
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                        end
+                        
+                        lpR(1,si) = log(sum(pR)) - quadOffset(si);
+                    end
+                end
+                
 				% log P(s'|r)
 				% Divide joint by marginal P(r)
 				lpSgR = bsxfun(@minus, lpRS, lpR);
 
 				% H(s'|r), in bits, converting from log_e to log_2
 				hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
+                
+                % Check accuracy of integration
+                hSgR_sparse = -2 * mean([sum(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1) ; sum(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1)]);
+                if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
 
 				% Sample specific information Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
@@ -526,7 +581,7 @@ classdef Neurons
                 end
                 
                 % Impose minimum iteration limit so we get a valid estimate of SEM
-                cont = cont | iter < 10;
+                cont = cont | iter < 100;
             end
             
             try
