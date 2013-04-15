@@ -1,6 +1,7 @@
 classdef StimulusEnsemble
     
     properties
+        continuous = true;
         circular = false;
         ensemble = [];
         width = [];
