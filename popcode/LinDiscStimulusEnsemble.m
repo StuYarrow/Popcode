@@ -25,7 +25,12 @@ classdef LinDiscStimulusEnsemble < DiscreteStimulusEnsemble
                 assert(mod(top - bottom, interval) == 0, 'Interval must be a divisor of the range')
                 assert(shift >= 0 && shift < interval, 'Invalid shift value')
                 
-                obj.ensemble = (bottom + shift) : interval : top;
+                if shift == 0.0
+                    obj.ensemble = bottom : interval : (top - interval);
+                else
+                    obj.ensemble = (bottom + shift) : interval : top;
+                end
+                
                 obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
 
             otherwise
