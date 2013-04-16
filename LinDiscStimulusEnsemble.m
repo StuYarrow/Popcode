@@ -15,10 +15,10 @@ classdef LinDiscStimulusEnsemble < DiscreteStimulusEnsemble
                 % do nothing
                 
             case 4
-                bottom = double(varargin{2});
-                top = double(varargin{3});
-                interval = double(varargin{4});
-                shift = double(varargin{5});
+                bottom = double(varargin{1});
+                top = double(varargin{2});
+                interval = double(varargin{3});
+                shift = double(varargin{4});
 
                 assert(top > bottom, 'Upper limit must be greater than lower limit')
                 assert(interval > 0 && interval <= (top - bottom), 'Invalid interval value')
