@@ -454,18 +454,27 @@ classdef Neurons
                     % log P(r,s')
                     % Mutiply P(r|s) and P(s) to find joint distribution
                     lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
-
-                    % log P(r)
-                    % Calculate marginal by summing over s'
-                    lpR = logsumexp(lpRS, 1);
-
-                    % Check integration accuracy
-                    lpR_sparse = mean([logsumexp(lpRS(1:2:end,:) + log(2)); logsumexp(lpRS(2:2:end,:) + log(2))]);
                     
-                    if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
-                        % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
-                        fprintf('Switching to adaptive integration algorithm.\n')
-                        adaptive = true;
+                    if stim.continuous
+                        % Currently this is only correct for circular stimuli
+                        
+                        % log P(r)
+                        % Calculate marginal by integrating over s'
+                        lpR = logsumexp(lpRS, 1) + log(stim.width);
+                        
+                        % If the stimulus variable is continuous
+                        % Check integration accuracy
+                        lpR_sparse = mean([logsumexp(lpRS(1:2:end,:) + log(2 * stim.width)); logsumexp(lpRS(2:2:end,:) + log(2 * stim.width))]);
+
+                        if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
+                            % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                            fprintf('Switching to adaptive integration algorithm.\n')
+                            adaptive = true;
+                        end
+                    else
+                        % log P(r)
+                        % Calculate marginal by summing over s'
+                        lpR = logsumexp(lpRS, 1);
                     end
                 end
                 
@@ -508,14 +517,21 @@ classdef Neurons
 				% log P(s'|r)
 				% Divide joint by marginal P(r)
 				lpSgR = bsxfun(@minus, lpRS, lpR);
-
-				% H(s'|r), in bits, converting from log_e to log_2
-				hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
                 
-                % Check accuracy of integration
-                hSgR_sparse = -2 * mean([sum(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1) ; sum(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1)]);
-                if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
-
+                if stim.continuous
+                    % Currently this is only correct for circular stimuli
+                    
+                    % H(s'|r), in bits, converting from log_e to log_2
+                    hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1) * stim.width;
+                    
+                    % Check accuracy of integration
+                    hSgR_sparse = -2 * stim.width * mean([sum(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1) ; sum(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1)]);
+                    if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
+                else
+                    % H(s'|r), in bits, converting from log_e to log_2
+                    hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
+                end
+                
 				% Sample specific information Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
 				Issi.appendSample(stim.entropy - hSgR);
@@ -749,8 +765,8 @@ classdef Neurons
             % Function for computing SSI_Fisher, see:
             %
             % Yarrow S, Challis E, Series P (2012)
-            % Fisher and Shannon information in finite neural populations.
-            % Neural Comput (in review).
+            % Fisher and Shannon information in finite neural populations
+            % Neural Computation 24:1740-80
 		
 			% S stimulus
 			sMat = repmat(stim.ensemble, [stim.n 1]);
