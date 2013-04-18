@@ -20,11 +20,6 @@ classdef StimulusEnsemble
 		function num = n(obj)
 			num = size(obj.ensemble, 2);
         end
-		
-        
-		function h = entropy(obj)
-			h = -sum(obj.pS .* log2(obj.pS));
-        end
         
 	end
 end
