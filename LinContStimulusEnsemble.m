@@ -27,7 +27,7 @@ classdef LinContStimulusEnsemble < ContinuousStimulusEnsemble
                 obj.width = spacing;
                 obj.lowerLimit = bottom;
                 obj.upperLimit = top;
-                obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
+                obj.pS = 1.0 ./ (top - bottom) .* ones(1, obj.n);
                 
             otherwise
                 error('Wrong number of arguments')
@@ -37,6 +37,10 @@ classdef LinContStimulusEnsemble < ContinuousStimulusEnsemble
         function p = pSint(obj, s)
             % piecewise linear interpolation
             p = interp1q(obj.ensemble', obj.pS', s(:))';
+        end
+        
+        function h = entropy(obj)
+			h = -trapz(obj.pS .* log2(obj.pS)) .* obj.width;
         end
         
 	end
