@@ -26,7 +26,7 @@ classdef CircContStimulusEnsemble < ContinuousStimulusEnsemble
                 obj.width = spacing;
                 obj.lowerLimit = -modulo/2;
                 obj.upperLimit = modulo/2;
-                obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
+                obj.pS = 1.0 ./ modulo .* ones(1, obj.n);
                 
             otherwise
                 error('Wrong number of arguments')
@@ -38,6 +38,10 @@ classdef CircContStimulusEnsemble < ContinuousStimulusEnsemble
             pS = [obj.pS(end), obj.pS];
             ens = [obj.ensemble(1) - obj.width, obj.ensemble];
             p = interp1q(ens(:), pS', s(:))';
+        end
+        
+        function h = entropy(obj)
+			h = -sum(obj.pS .* log2(obj.pS)) .* obj.width;
         end
         
 	end

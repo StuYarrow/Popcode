@@ -19,6 +19,6 @@ classdef ContinuousStimulusEnsemble < StimulusEnsemble
 			% Superclass constructor
             obj = obj@StimulusEnsemble();
         end
-                
+        
     end
 end

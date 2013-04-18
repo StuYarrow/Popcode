@@ -17,5 +17,10 @@ classdef DiscreteStimulusEnsemble < StimulusEnsemble
             obj = obj@StimulusEnsemble();
         end
         
+        
+        function h = entropy(obj)
+			h = -sum(obj.pS .* log2(obj.pS));
+        end
+        
     end
 end
