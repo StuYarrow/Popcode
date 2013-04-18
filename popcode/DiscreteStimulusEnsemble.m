@@ -17,9 +17,18 @@ classdef DiscreteStimulusEnsemble < StimulusEnsemble
             obj = obj@StimulusEnsemble();
         end
         
-        
         function h = entropy(obj)
 			h = -sum(obj.pS .* log2(obj.pS));
+        end
+        
+    end
+    
+    
+    methods (Static)
+        
+        function integral = integrate(ords)
+            % trapezoid rule
+            integral = sum(ords);
         end
         
     end
