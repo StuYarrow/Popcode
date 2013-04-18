@@ -21,5 +21,14 @@ classdef StimulusEnsemble
 			num = size(obj.ensemble, 2);
         end
         
-	end
+        
+        function h = entropy(obj)
+            h = -obj.integrate(obj.pS .* log2(obj.pS));
+        end
+        
+    end
+    
+    methods (Abstract)
+        function integrate(obj)
+    end
 end

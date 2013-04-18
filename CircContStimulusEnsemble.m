@@ -40,8 +40,9 @@ classdef CircContStimulusEnsemble < ContinuousStimulusEnsemble
             p = interp1q(ens(:), pS', s(:))';
         end
         
-        function h = entropy(obj)
-			h = -sum(obj.pS .* log2(obj.pS)) .* obj.width;
+        function integral = integrate(obj, ords)
+            % trapezoid rule
+            integral = sum(ords) .* obj.width;
         end
         
 	end
