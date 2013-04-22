@@ -26,9 +26,9 @@ classdef DiscreteStimulusEnsemble < StimulusEnsemble
     
     methods (Static)
         
-        function integral = integrate(ords)
+        function integral = integrate(ords, dim)
             % trapezoid rule
-            integral = sum(ords);
+            integral = sum(ords, dim);
         end
         
     end
