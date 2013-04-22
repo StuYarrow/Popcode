@@ -176,15 +176,15 @@ classdef Neurons
             cpS = cumsum(stim.pS);
             
             cont = true;
-			while cont
+            while cont
                 iter = iter + 1;
                 
                 % Display progress every 100 iterations
-				if ~mod(iter, 100)
+                if ~mod(iter, 100)
 					fprintf('mi()  iter: %d  val: %.4g  rel. error: %.4g\n', iter, miEst.runMean, miEst.runDelta)
-				end
-
-				switch method
+                end
+                
+                switch method
 				case 'randMC'
 					% Sample s from stimulus distribution
 					[dummy, bin] = histc(rand(), cpS);
@@ -311,22 +311,24 @@ classdef Neurons
 		end
 		
 		function varargout = ssiss(obj, n, method, stim, stimOrds, tol, maxiter, timeout)
+            fAdInt = @quad; % Use the quad function
+            trace = false; % debug flag
             
-			try
+            try
 				% Test sanity of neuron indices
 				obj.preferredStimulus(n);
 			catch err
 				error([inputname(2) ' is not a valid neuron index'])
-			end
-			
-			try
+            end
+            
+            try
 				% Test sanity of stimulus ordinate indices
 				stim.ensemble(stimOrds);
 			catch err
 				error([inputname(5) ' is not a valid stimulus ordinate index'])
-			end
-			
-			if ~any(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'}))
+            end
+            
+            if ~any(strcmp(method, {'quadrature' 'randMC' 'quasirandMC'}))
 				error([method ' is not a valid SSI calculation method'])
             end
 
@@ -335,7 +337,7 @@ classdef Neurons
             end
 			
 			% Create mask for calculating specific stimulus ordinates only
-			if ~isempty(stimOrds)
+            if ~isempty(stimOrds)
 				sMask = false(stim.n, 1);
 				sMask(stimOrds) = true;
 				sMaskN = sum(sMask + 0);
@@ -416,12 +418,12 @@ classdef Neurons
             % Main MC sampling loop
             while cont
                 iter = iter + 1;
-
-				if ~mod(iter, 10)
+                
+                if ~mod(iter, 10)
 					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, mean(Issi.runDelta))
                 end
                 
-				switch method
+                switch method
                     case 'randMC'
                         % Sample r from response distribution
                         switch obj.distribution
@@ -454,34 +456,30 @@ classdef Neurons
                     % log P(r,s')
                     % Mutiply P(r|s) and P(s) to find joint distribution
                     lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
-                    
-                    if stim.continuous
-                        % Currently this is only correct for circular stimuli
                         
-                        % log P(r)
-                        % Calculate marginal by integrating over s'
-                        lpR = logsumexp(lpRS, 1) + log(stim.width);
+                    % log P(r)
+                    % Calculate marginal by integrating over s'
+                    offsets = max(lpRS, [], 1);
+                    lpRS_offset = bsxfun(@minus, lpRS, offsets);
+                    lpR = log(stim.integrate(exp(lpRS_offset), 1));
+                    lpR = lpR + offsets;
                         
+                   if stim.continuous
                         % If the stimulus variable is continuous
                         % Check integration accuracy
-                        lpR_sparse = mean([logsumexp(lpRS(1:2:end,:) + log(2 * stim.width)); logsumexp(lpRS(2:2:end,:) + log(2 * stim.width))]);
+                        lpR_sparse1 = log(stim.integrate(exp(lpRS_offset(1:2:end,:)), 1));
+                        lpR_sparse2 = log(stim.integrate(exp(lpRS_offset(2:2:end,:)), 1));
+                        lpR_sparse = mean([lpR_sparse1 ; lpR_sparse2]) + log(2) + offsets;
 
                         if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
                             % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
                             fprintf('Switching to adaptive integration algorithm.\n')
                             adaptive = true;
                         end
-                    else
-                        % log P(r)
-                        % Calculate marginal by summing over s'
-                        lpR = logsumexp(lpRS, 1);
                     end
                 end
                 
                 if adaptive
-                    trace = false; % debug flag
-                    fAdInt = @quad; % Use the quad function
-                    
                     % log p(r,s')
                     lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim), num2cell(stim.ensemble)', rCell));
                     
@@ -518,18 +516,16 @@ classdef Neurons
 				% Divide joint by marginal P(r)
 				lpSgR = bsxfun(@minus, lpRS, lpR);
                 
+                % H(s'|r), in bits, converting from log_e to log_2
+                hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);                    
+
                 if stim.continuous
-                    % Currently this is only correct for circular stimuli
-                    
-                    % H(s'|r), in bits, converting from log_e to log_2
-                    hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1) * stim.width;
-                    
                     % Check accuracy of integration
-                    hSgR_sparse = -2 * stim.width * mean([sum(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1) ; sum(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1)]);
+                    hSgR_sparse1 = -2 * stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
+                    hSgR_sparse2 = -2 * stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
+                    hSgR_sparse = mean([hSgR_sparse1 ; hSgR_sparse2]);
+
                     if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
-                else
-                    % H(s'|r), in bits, converting from log_e to log_2
-                    hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
                 end
                 
 				% Sample specific information Isp(r)
@@ -547,28 +543,90 @@ classdef Neurons
 					% Mask out neurons of interest in response vectors
 					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
                     
-					% log P(r|s)
-                    switch obj.distribution
-                        case 'Gaussian'
-                            lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
-                        case 'Poisson'
-                            lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCellMarg, rMeanMargCell'));
+                    if ~adaptive
+                        % log P(r|s')
+                        % Calculate response probability densities
+                        switch obj.distribution
+                            case 'Gaussian'
+                                lpRgS = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+                            case 'Poisson'
+                                lpRgS = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCellMarg, rMeanMargCell'));
+                        end
+
+                        % log P(r,s')
+                        % Mutiply P(r|s) and P(s) to find joint distribution
+                        lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
+
+                        % log P(r)
+                        % Calculate marginal by integrating over s'
+                        offsets = max(lpRS, [], 1);
+                        lpRS_offset = bsxfun(@minus, lpRS, offsets);
+                        lpR = log(stim.integrate(exp(lpRS_offset), 1));
+                        lpR = lpR + offsets;
+
+                       if stim.continuous
+                            % If the stimulus variable is continuous
+                            % Check integration accuracy
+                            lpR_sparse1 = log(stim.integrate(exp(lpRS_offset(1:2:end,:)), 1));
+                            lpR_sparse2 = log(stim.integrate(exp(lpRS_offset(2:2:end,:)), 1));
+                            lpR_sparse = mean([lpR_sparse1 ; lpR_sparse2]) + log(2) + offsets;
+                            
+                            if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
+                                % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                                fprintf('Switching to adaptive integration algorithm.\n')
+                                adaptive = true;
+                            end
+                        end
                     end
-                    
-					% log P(r,s)
-					% Multiply P(r|s) and P(s) to find joint distribution
-					lpRS = bsxfun(@plus, lpRgS, log(stim.pS')); % stim'.n x stim
-                    
-					% log P(r)
-					% Calculate marginal by summing over s'
-					lpR = logsumexp(lpRS, 1);
+
+                    if adaptive
+                        % log p(r,s')
+                        lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim), num2cell(stim.ensemble)', rCellMarg));
+
+                        % Log space offset for numerical stability
+                        quadOffset = -lpRS(distPeaks);
+
+                        % Absolute tolerance for integration
+                        quadTol = tol * 1e-2;
+
+                        for si = 1 : sMaskN
+                            pR = [0 0 0];
+                            bin = stimOrds(si);
+                            r = rCellMarg{si};
+
+                            switch bin
+                                case 1 % Bottom bin - do first 2 bins, remainder
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                case stim.n % Top bin - do first bin, last bin, remainder
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                                otherwise % Other bins - do one bin either side, remainder above, remainder below
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            end
+
+                            lpR(1,si) = log(sum(pR)) - quadOffset(si);
+                        end
+                    end
                     
 					% log P(s|r)
 					% Divide joint by marginal P(r)
 					lpSgR = bsxfun(@minus, lpRS, lpR);
                     
-					% H(s|r), in bits, converting from log_e to log_2
-					hSgR = -sum(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
+                    % H(s'|r), in bits, converting from log_e to log_2
+                    hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);                    
+                    
+                    if stim.continuous
+                        % Check accuracy of integration
+                        hSgR_sparse1 = -2 * stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
+                        hSgR_sparse2 = -2 * stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
+                        hSgR_sparse = mean([hSgR_sparse1 ; hSgR_sparse2]);
+                        
+                        if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
+                    end
                     
 					% Isp(r)
 					% Specific information; reduction in stimulus entropy due to observation of r
@@ -592,8 +650,9 @@ classdef Neurons
                 
                 % If the wall clock is running, check the elapsed time
                 try
-                    cont = cont & toc < timeout;
+                    cont = cont && toc < timeout;
                 catch
+                    % do nothing
                 end
                 
                 % Impose minimum iteration limit so we get a valid estimate of SEM
@@ -634,7 +693,7 @@ classdef Neurons
 			case 3
 				varargout = {fullSSI remSSI iter};
             case 4
-                varargout = {fullSSI remSSI iter Issi IssiMarg};
+                varargout = {fullSSI remSSI Issi IssiMarg};
 			case 5
 				varargout = {fullSSI remSSI fullIsur remIsur iter};
             case 9
