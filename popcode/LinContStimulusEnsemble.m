@@ -39,9 +39,9 @@ classdef LinContStimulusEnsemble < ContinuousStimulusEnsemble
             p = interp1q(obj.ensemble', obj.pS', s(:))';
         end
         
-        function integral = integrate(obj, ords)
+        function integral = integrate(obj, ords, dim)
             % trapezoid rule
-            integral = trapz(ords) .* obj.width;
+            integral = trapz(ords, dim) .* obj.width;
         end
         
 	end

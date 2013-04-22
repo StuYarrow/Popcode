@@ -23,12 +23,12 @@ classdef StimulusEnsemble
         
         
         function h = entropy(obj)
-            h = -obj.integrate(obj.pS .* log2(obj.pS));
+            h = -obj.integrate(obj.pS .* log2(obj.pS), 2);
         end
         
     end
     
     methods (Abstract)
-        function integrate(obj)
+        integrate(obj, dim)
     end
 end
