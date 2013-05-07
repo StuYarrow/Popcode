@@ -14,6 +14,10 @@ classdef LinDiscStimulusEnsemble < DiscreteStimulusEnsemble
             case 0
                 % do nothing
                 
+            case 1
+                obj.ensemble = double(varargin{1});
+                obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
+                
             case 4
                 bottom = double(varargin{1});
                 top = double(varargin{2});
