@@ -246,7 +246,7 @@ classdef Neurons
                     fAdInt = @quad; % Use the quad function
                     
                     % log p(r,s)
-                    lpRS = obj.flpSR(stim.ensemble(bin), r, stim);
+                    lpRS = obj.flpSR(stim.ensemble(bin), r, stim, []);
                     
                     % Log space offset for numerical stability
                     quadOffset = round(-lpRS);
@@ -256,16 +256,16 @@ classdef Neurons
                     
                     switch bin
                         case 1 % Bottom bin - do first 2 bins, remainder
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                         case stim.n % Top bin - do first bin, last bin, remainder
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
-                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
                         otherwise % Other bins - do one bin either side, remainder above, remainder below
-                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
-                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
-                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                            [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                            [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset, []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                     end
                     
                     lpR = log(sum(pR)) - quadOffset;
@@ -481,7 +481,7 @@ classdef Neurons
                 
                 if adaptive
                     % log p(r,s')
-                    lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim), num2cell(stim.ensemble)', rCell));
+                    lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim, []), num2cell(stim.ensemble)', rCell));
                     
                     % Log space offset for numerical stability
                     quadOffset = -lpRS(distPeaks);
@@ -496,16 +496,16 @@ classdef Neurons
                         
                         switch bin
                             case 1 % Bottom bin - do first 2 bins, remainder
-                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
-                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                             case stim.n % Top bin - do first bin, last bin, remainder
-                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
-                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
-                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
                             otherwise % Other bins - do one bin either side, remainder above, remainder below
-                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
-                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
-                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                         end
                         
                         lpR(1,si) = log(sum(pR)) - quadOffset(si);
@@ -521,11 +521,16 @@ classdef Neurons
 
                 if stim.continuous
                     % Check accuracy of integration
-                    hSgR_sparse1 = -2 * stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
-                    hSgR_sparse2 = -2 * stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
-                    hSgR_sparse = mean([hSgR_sparse1 ; hSgR_sparse2]);
+                    spacing = 1 / (stim.n - 1);
+                    d1 = gradient(exp(lpSgR') .* (lpSgR' ./ log(2)), spacing);
+                    d2 = gradient(d1, spacing);
+                    maxDiff2 = max(abs(d2), [], 2);
+                    errLim = maxDiff2 ./ (12 * stim.n^2);
+                    propErrLim = errLim' ./ hSgR;
 
-                    if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
+                    if any(propErrLim > 0.05)
+                        warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).')
+                    end
                 end
                 
 				% Sample specific information Isp(r)
@@ -581,7 +586,7 @@ classdef Neurons
 
                     if adaptive
                         % log p(r,s')
-                        lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim), num2cell(stim.ensemble)', rCellMarg));
+                        lpRS = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim, margMask), num2cell(stim.ensemble)', rCellMarg));
 
                         % Log space offset for numerical stability
                         quadOffset = -lpRS(distPeaks);
@@ -596,16 +601,16 @@ classdef Neurons
 
                             switch bin
                                 case 1 % Bottom bin - do first 2 bins, remainder
-                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
-                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                                 case stim.n % Top bin - do first bin, last bin, remainder
-                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
-                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
-                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
                                 otherwise % Other bins - do one bin either side, remainder above, remainder below
-                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
-                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
-                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si)), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
                             end
 
                             lpR(1,si) = log(sum(pR)) - quadOffset(si);
@@ -621,11 +626,16 @@ classdef Neurons
                     
                     if stim.continuous
                         % Check accuracy of integration
-                        hSgR_sparse1 = -2 * stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
-                        hSgR_sparse2 = -2 * stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
-                        hSgR_sparse = mean([hSgR_sparse1 ; hSgR_sparse2]);
+                        spacing = 1 / (stim.n - 1);
+                        d1 = gradient(exp(lpSgR') .* (lpSgR' ./ log(2)), spacing);
+                        d2 = gradient(d1, spacing);
+                        maxDiff2 = max(abs(d2), [], 2);
+                        errLim = maxDiff2 ./ (12 * stim.n^2);
+                        propErrLim = errLim' ./ hSgR;
                         
-                        if any((hSgR_sparse - hSgR) ./ hSgR > tol), warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).'); end
+                        if any(propErrLim > 0.05)
+                            warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).')
+                        end
                     end
                     
 					% Isp(r)
@@ -1185,10 +1195,17 @@ classdef Neurons
             J = FI.mean;
         end
         
-        function lpSR = flpSR(obj, s, r, stim)
+        function lpSR = flpSR(obj, s, r, stim, inds)
             % mean response given s
             rMean = obj.integrationTime .* meanR(obj, s);
-            rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(length(s), 1)));
+            if ~isempty(inds)
+                rMean = rMean(inds,:);
+                popSz = sum(inds);
+            else
+                popSz = obj.popSize;
+            end
+            
+            rMeanCell = squeeze(mat2cell(rMean, popSz, ones(length(s), 1)));
             rCell = repmat({r}, [length(s) 1]);
             
             switch obj.distribution
@@ -1211,12 +1228,12 @@ classdef Neurons
             lpSR = lpS + lpRgS;
         end
         
-        function pSR = fpSR(obj, s, r, stim)
-            pSR = exp(flpSR(obj, s, r, stim));
+        function pSR = fpSR(obj, s, r, stim, inds)
+            pSR = exp(flpSR(obj, s, r, stim, inds));
         end
         
-        function pSR = fpSR_offset(obj, s, r, stim, logOffset)
-            pSR = exp(flpSR(obj, s, r, stim) + logOffset);
+        function pSR = fpSR_offset(obj, s, r, stim, logOffset, inds)
+            pSR = exp(flpSR(obj, s, r, stim, inds) + logOffset);
         end
         
     end
