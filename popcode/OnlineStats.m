@@ -79,6 +79,27 @@ classdef OnlineStats < handle
         function delta = runDelta(obj)
             delta = abs(obj.runSEM ./ obj.runMean);
         end
+        
+        function objR = minus(objA, objB)
+            assert(isa(objA, 'OnlineStats') && isa(objB, 'OnlineStats'), 'Only subtraction of two OnlineStats objects is possible')
+            assert(all(size(objA.samples) == size(objB.samples)), 'Instances to be subtracted must have equal dimensionality and iteration count')
+            assert(objA.iter == objB.iter, 'Instances to be subtracted must have equal iteration counts')
+            
+            objR = OnlineStats();
+            objR.samples = objA.samples - objB.samples;
+            objR.iter = objA.iter;
+        end
+        
+        function objR = plus(objA, objB)
+            assert(isa(objA, 'OnlineStats') && isa(objB, 'OnlineStats'), 'Only addition of two OnlineStats objects is possible')
+            assert(all(size(objA.samples) == size(objB.samples)), 'Instances to be added must have equal dimensionality and iteration count')
+            assert(objA.iter == objB.iter, 'Instances to be subtracted must have equal iteration counts')
+            
+            objR = OnlineStats();
+            objR.samples = objA.samples + objB.samples;
+            objR.iter = objA.iter;
+        end
+        
     end
     
 end
