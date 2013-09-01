@@ -69,41 +69,44 @@ classdef GaussNeurons < Neurons
 		% r = meanR(obj, stimulusEnsemble)
 		%
 		% r = maxRate * exp(-((stimulus - preferredStimulus)^2 / (2 * width^2))) + backgroundRate
+            
+            if isa(stim, 'StimulusEnsemble')
+                assert(stim.dimensionality == 1, 'SigmoidNeurons only supports 1-D stimuli at present')
+                stims = repmat(stim.ensemble, [obj.popSize 1]);
+                maxRates = repmat(obj.maxRate, [1 stim.n]);
+                backgroundRates = repmat(obj.backgroundRate, [1 stim.n]);
+                centres = repmat(obj.preferredStimulus, [1 stim.n]);
+                widths = repmat(obj.width, [1 stim.n]);
+            elseif isa(stim, 'double')
+                stims = repmat(stim(:)', [obj.popSize 1]);
+                maxRates = repmat(obj.maxRate, [1 length(stim)]);
+                backgroundRates = repmat(obj.backgroundRate, [1 length(stim)]);
+                centres = repmat(obj.preferredStimulus, [1 length(stim)]);
+                widths = repmat(obj.width, [1 length(stim)]);
+            else
+                error('Invalid stimulus: stim may be a StimulusEnsemble object or vector of stimulus values only')
+            end
 
-			if ~isa(stim, 'StimulusEnsemble') 
-				error([inputname(2) ' is not a valid StimulusEnsemble object'])
-			end
-
-			if stim.dimensionality ~= 1
-				error('GaussNeurons only supports 1-D stimuli at present')
-			end
-
-			stims = repmat(stim.ensemble, obj.popSize, 1);
-
-			maxRateArr = repmat(obj.maxRate, 1, stim.n);
-			backgroundRateArr = repmat(obj.backgroundRate, 1, stim.n);
-			centreArr = repmat(obj.preferredStimulus, 1, stim.n);
-			widthArr = repmat(obj.width, 1, stim.n);
-
-			r = maxRateArr .* exp(-((stims - centreArr).^2) ./ (2.0 .* widthArr.^2)) + backgroundRateArr;
+			r = maxRates .* exp(-((stims - centres).^2) ./ (2.0 .* widths.^2)) + backgroundRates;
 		end
 		
 		function dr = dMeanR(obj, stim)
-			if ~isa(stim, 'StimulusEnsemble') 
-				error([inputname(2) ' is not a valid StimulusEnsemble object'])
-			end
-
-			if stim.dimensionality ~= 1
-				error('GaussNeurons only supports 1-D stimuli at present')
-			end
-
-			stims = repmat(stim.ensemble, [obj.Neurons.popSize 1]);
-						
-			maxRateArr = repmat(obj.maxRate, 1, stim.n);
-			centreArr = repmat(obj.preferredStimulus, 1, stim.n);
-			widthArr = repmat(obj.width, 1, stim.n);
+            if isa(stim, 'StimulusEnsemble')
+                assert(stim.dimensionality == 1, 'SigmoidNeurons only supports 1-D stimuli at present')
+                stims = repmat(stim.ensemble, [obj.popSize 1]);
+                maxRates = repmat(obj.maxRate, [1 stim.n]);
+                centres = repmat(obj.preferredStimulus, [1 stim.n]);
+                widths = repmat(obj.width, [1 stim.n]);
+            elseif isa(stim, 'double')
+                stims = repmat(stim(:)', [obj.popSize 1]);
+                maxRates = repmat(obj.maxRate, [1 length(stim)]);
+                centres = repmat(obj.preferredStimulus, [1 length(stim)]);
+                widths = repmat(obj.width, [1 length(stim)]);
+            else
+                error('Invalid stimulus: stim may be a StimulusEnsemble object or vector of stimulus values only')
+            end
             
-            dr = maxRateArr .* (centreArr - stims) ./ widthArr.^2 .* exp(-(centreArr - stims).^2 ./ (2 .* widthArr.^2));
+            dr = maxRates .* (centres - stims) ./ widths.^2 .* exp(-(centres - stims).^2 ./ (2 .* widths.^2));
         end
 		
         function obj = remove(obj, nMarg)
