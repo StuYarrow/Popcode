@@ -1,0 +1,3 @@
+Popcode - A Matlab toolbox for modelling rate population codes and computing information theoretic quantities (such as the SSI), along with Fisher information.
+
+See: Yarrow S, Challis E, Series P (2012) Fisher and Shannon information in finite neural populations. Neural Comput 24:1740–80.
