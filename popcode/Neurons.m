@@ -187,7 +187,7 @@ classdef Neurons
                 switch method
 				case 'randMC'
 					% Sample s from stimulus distribution
-					[dummy, bin] = histc(rand(), cpS);
+					[dummy, bin] = histc(rand(), cpS); %#ok<ASGLU>
 					bin = bin + 1;
 					%s = double(stim.ensemble);
 					%s = s(bin);
@@ -317,14 +317,14 @@ classdef Neurons
             try
 				% Test sanity of neuron indices
 				obj.preferredStimulus(n);
-			catch err
+			catch err %#ok<NASGU>
 				error([inputname(2) ' is not a valid neuron index'])
             end
             
             try
 				% Test sanity of stimulus ordinate indices
 				stim.ensemble(stimOrds);
-			catch err
+			catch err %#ok<NASGU>
 				error([inputname(5) ' is not a valid stimulus ordinate index'])
             end
             
@@ -409,18 +409,20 @@ classdef Neurons
 			iter = 0;
 			cont = true;
             adaptive = false;
+            delta = 0;
             
             Issi = OnlineStats(sMaskN, maxiter);
             Isur = OnlineStats(sMaskN, maxiter);
             IssiMarg = OnlineStats(sMaskN, maxiter);
             IsurMarg = OnlineStats(sMaskN, maxiter);
+            ImSSI = OnlineStats(sMaskN, maxiter);
 			
             % Main MC sampling loop
             while cont
                 iter = iter + 1;
                 
                 if ~mod(iter, 10)
-					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, mean(Issi.runDelta))
+					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, delta)
                 end
                 
                 switch method
@@ -518,7 +520,10 @@ classdef Neurons
                 
                 % H(s'|r), in bits, converting from log_e to log_2
                 hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);                    
-
+                
+                %hSgR2 = (-sum(exp(lpRgS) .* lpRgS, 1) ./ sum(exp(lpRgS), 1) + logsumexp(lpRgS, 1)) ./ log(2);
+                %assert((hSgR2 - hSgR) ./ hSgR < 0.01, 'Something wrong')
+                
                 if stim.continuous
                     % Check accuracy of integration
                     spacing = 1 / (stim.n - 1);
@@ -622,8 +627,8 @@ classdef Neurons
 					lpSgR = bsxfun(@minus, lpRS, lpR);
                     
                     % H(s'|r), in bits, converting from log_e to log_2
-                    hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);                    
-                    
+                    hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
+                                        
                     if stim.continuous
                         % Check accuracy of integration
                         spacing = 1 / (stim.n - 1);
@@ -642,6 +647,8 @@ classdef Neurons
 					% Specific information; reduction in stimulus entropy due to observation of r
                     % Compute MC sample
                     IssiMarg.appendSample(stim.entropy - hSgR);
+                    ImSSI.appendSample(Issi.samples(Issi.iter,:) - IssiMarg.samples(IssiMarg.iter,:));
+                    
 					
                     % Specific surprise
 					% log_2( P(r|s) / P(r) )
@@ -651,7 +658,7 @@ classdef Neurons
                 
                 % Test halting criteria (SEM, max iterations limit, timeout)
                 if exist('margMask', 'var')
-                    delta = mean([Issi.runDelta IssiMarg.runDelta]);
+                    delta = mean(max([Issi.runDelta ; IssiMarg.runDelta ; ImSSI.runDelta], [], 1));
                 else
                     delta = mean(Issi.runDelta);
                 end
@@ -747,7 +754,7 @@ classdef Neurons
                     end
                     
                 case 'randMC'
-                    [J samples] = obj.fisher_mc(method, stim, tol, maxiter);
+                    [J, samples] = obj.fisher_mc(method, stim, tol, maxiter);
                     
                     switch nargout
                         case 1
@@ -763,7 +770,7 @@ classdef Neurons
             end
 		end
 		
-		function [fullFisher remainderFisher] = margFisher(obj, nMarg, method, stim, tol)
+		function [fullFisher, remainderFisher] = margFisher(obj, nMarg, method, stim, tol)
             % Function for calculating fisher of population with and
             % without neuron(s) of interest
             
@@ -788,7 +795,7 @@ classdef Neurons
             % Mutual information, Fisher information, and population coding.
             % Neural Comput 10:1731?1757.
             
-            if true
+            %if true
                 % Fisher information
                 fish = obj.fisher('analytic', stim, 0);
 
@@ -803,9 +810,9 @@ classdef Neurons
                 end
                 
                 ifish = stim.entropy - 0.5 .* sum(pS .* (1.0 + log2(pi) + log2(exp(1)) - log2(fish)));
-            else
-                ifish = stim.entropy - 0.5 .* quad(@(s) stim.pSint(s) .* (1.0 + log2(pi) + log2(exp(1)) - log2(obj.fisher('analytic', s, 0))), stim.ensemble(1) - diff(stim.ensemble(1:2)), stim.ensemble(end));
-            end
+            %else
+            %    ifish = stim.entropy - 0.5 .* quad(@(s) stim.pSint(s) .* (1.0 + log2(pi) + log2(exp(1)) - log2(obj.fisher('analytic', s, 0))), stim.ensemble(1) - diff(stim.ensemble(1:2)), stim.ensemble(end));
+            %end
 		end
 		
 		function varargout = mIfisher(obj, nMarg, stim)
@@ -857,7 +864,7 @@ classdef Neurons
 			end
 			
 			if ~isempty(n)
-				[fullFI remFI] = obj.margFisher(n, fisherMethod, stim, tol);
+				[fullFI, remFI] = obj.margFisher(n, fisherMethod, stim, tol);
 				
 				% Compute SSIfisher excluding cells of interest
 				% sigma(s)
@@ -921,7 +928,48 @@ classdef Neurons
 			else
 				ssif = ssifFull;
 			end
-		end
+        end
+        
+        function h = noiseEntropy(obj, stim, tol)
+            % Get mean responses for each stimulus ordinate
+            % obj.popSize x stim.n
+            rMean = obj.integrationTime .* obj.meanR(stim);
+            rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+            
+            switch obj.distribution
+                case 'Gaussian'
+                    assert(~obj.truncate, 'Truncated Gaussian distribution not supported')
+                    % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+                    QCell = obj.Q(rMeanCell);
+                    % Define entropy function (in bits)
+                    fhGauss = @(Q) 0.5 * log2(det(2 * pi * exp(1) * Q));
+                    % Compute entropy
+                    h = cellfun(fhGauss, QCell);
+                case 'Poisson'
+                    % Do summation
+                    minK = 2 * max([rMean(:) ; 5]);
+                    sumAccum = zeros(size(rMean));
+                    k = 0;
+                    kFac = 1;
+                    delta = 0;
+                    while k < minK || any(delta(:) > tol)
+                        k = k + 1;
+                        kFac = kFac * k;
+                        sumTerm = rMean.^k .* log2(kFac) ./ kFac;
+                        sumAccum = sumAccum + sumTerm;
+                        delta = sumTerm ./ sumAccum;
+                    end
+                    
+                    hMarg = rMean .* (log2(exp(1)) - log2(rMean)) + exp(-rMean) .* sumAccum;
+                    h = sum(hMarg, 1);
+                        
+                    if any(h < 0)
+                        fprintf('-ive\n')
+                    end                    
+                otherwise
+                    error('Unsupported distribution')
+            end
+        end
 				
 		function q = Q(obj, resp)
 			q = cellfun(@(r) (obj.add .* obj.R + obj.a .* obj.R .* (r * r').^obj.alpha).^obj.exponent, resp, 'UniformOutput', false);
@@ -961,7 +1009,7 @@ classdef Neurons
 		
 		function retVal = tcplot(obj, stim)
 			r = meanR(obj, stim);
-			[stims ind] = sort(double(stim.ensemble));
+			[stims, ind] = sort(double(stim.ensemble));
 			retVal = plot(stims, r(:,ind));
 		end
 		
@@ -994,7 +1042,7 @@ classdef Neurons
 			end
 					
 		end
-		
+        
     end
     
     
@@ -1082,7 +1130,7 @@ classdef Neurons
             J = obj.integrationTime .* sum(f_prime.^2 ./ f, 1);
         end
         
-        function [J FI] = fisher_mc(obj, method, stim, tol, maxiter)
+        function [J, FI] = fisher_mc(obj, method, stim, tol, maxiter)
             % Generate offset stimuli
             stim2 = stim;
             dTheta = 0.1 .* stim2.width;
@@ -1235,7 +1283,7 @@ classdef Neurons
         function pSR = fpSR_offset(obj, s, r, stim, logOffset, inds)
             pSR = exp(flpSR(obj, s, r, stim, inds) + logOffset);
         end
-        
+ 
     end
 
 end
