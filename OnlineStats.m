@@ -8,9 +8,8 @@ classdef OnlineStats < handle
         samples = 0;
         runMean = 0;
         runM2 = 0;
-        runVar = 0;
-        runSEM = 0;
         iter = 0;
+        logging = true;
     end
     
     methods
@@ -25,18 +24,30 @@ classdef OnlineStats < handle
             
             switch nargin
                 case 0
-                    l = 1;
+                    sz = 1;
                     maxiter = 1;
                 case 2
-                    l = varargin{1};
+                    sz = varargin{1};
                     maxiter = varargin{2};
+                case 3
+                    sz = varargin{1};
+                    maxiter = varargin{2};
+                    logg = varargin{3};
+                    
+                    if islogical(logg) && isscalar(logg)
+                        obj.logging = logg;
+                    else
+                        error('Logging option must be scalar boolean')
+                    end
                 otherwise
                     error('Wrong number of arguments')
             end
             
-            obj.samples = zeros(maxiter, l);
-            obj.runMean = zeros(1, l);
-            obj.runM2 = zeros(1, l);
+            assert(length(sz) == 2, 'size must be 2-element row vector')
+            
+            obj.samples = zeros([sz maxiter]);
+            obj.runMean = zeros(sz);
+            obj.runM2 = zeros(sz);
             obj.iter = 0;
         end
         
@@ -46,35 +57,41 @@ classdef OnlineStats < handle
             obj.iter = obj.iter + 1;
             
             % Store sample
-            obj.samples(obj.iter,:) = sample;
+            if obj.logging
+                obj.samples(:,:,obj.iter) = sample;
+            end
             
             % Update mean
-            delta = obj.samples(obj.iter,:) - obj.runMean;
+            delta = sample - obj.runMean;
             obj.runMean = obj.runMean + delta ./ obj.iter;
             
             % Update second moment and variance
-            obj.runM2 = obj.runM2 + delta .* (obj.samples(obj.iter,:) - obj.runMean);
-            obj.runVar = (obj.runM2 ./ (obj.iter - 1));
-            
-            % Calculate SEM
-            obj.runSEM = sqrt(obj.runVar ./ obj.iter);
+            obj.runM2 = obj.runM2 + delta .* (sample - obj.runMean);
         end
-        
         
         function trim(obj)
-            obj.samples = obj.samples(1:obj.iter,:);
+            obj.samples = obj.samples(:,:,1:obj.iter);
         end
-        
         
         function mu = mean(obj)
-            mu = mean(obj.samples(1:obj.iter,:), 1);
+            if obj.logging
+                mu = mean(obj.samples(:,:,1:obj.iter), 3);
+            else
+                mu = obj.runMean;
+            end
         end
         
+        function se = runSEM(obj)     
+            if obj.iter > 1
+                se = sqrt((obj.runM2 ./ (obj.iter - 1)) ./ obj.iter);
+            else
+                se = zeros(size(obj.runMean));
+            end
+        end
         
         function err = sem(obj)
-            err = sqrt(var(obj.samples(1:obj.iter,:), 1) ./ obj.iter);
+            err = sqrt(var(obj.samples(:,:,1:obj.iter), 3) ./ obj.iter);
         end
-        
         
         function delta = runDelta(obj)
             delta = abs(obj.runSEM ./ obj.runMean);
@@ -84,6 +101,7 @@ classdef OnlineStats < handle
             assert(isa(objA, 'OnlineStats') && isa(objB, 'OnlineStats'), 'Only subtraction of two OnlineStats objects is possible')
             assert(all(size(objA.samples) == size(objB.samples)), 'Instances to be subtracted must have equal dimensionality and iteration count')
             assert(objA.iter == objB.iter, 'Instances to be subtracted must have equal iteration counts')
+            assert(objA.logging && objB.logging, 'Instances to be subtracted must have stored samples')
             
             objR = OnlineStats();
             objR.samples = objA.samples - objB.samples;
@@ -93,7 +111,8 @@ classdef OnlineStats < handle
         function objR = plus(objA, objB)
             assert(isa(objA, 'OnlineStats') && isa(objB, 'OnlineStats'), 'Only addition of two OnlineStats objects is possible')
             assert(all(size(objA.samples) == size(objB.samples)), 'Instances to be added must have equal dimensionality and iteration count')
-            assert(objA.iter == objB.iter, 'Instances to be subtracted must have equal iteration counts')
+            assert(objA.iter == objB.iter, 'Instances to be added must have equal iteration counts')
+            assert(objA.logging && objB.logging, 'Instances to be added must have stored samples')
             
             objR = OnlineStats();
             objR.samples = objA.samples + objB.samples;

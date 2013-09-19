@@ -170,7 +170,7 @@ classdef Neurons
             end
             
 			iter = 0; % iteration counter
-            miEst = OnlineStats(1, maxiter);
+            miEst = OnlineStats([1 1], maxiter);
             adaptive = false;
             
             cpS = cumsum(stim.pS);
@@ -411,11 +411,11 @@ classdef Neurons
             adaptive = false;
             delta = 0;
             
-            Issi = OnlineStats(sMaskN, maxiter);
-            Isur = OnlineStats(sMaskN, maxiter);
-            IssiMarg = OnlineStats(sMaskN, maxiter);
-            IsurMarg = OnlineStats(sMaskN, maxiter);
-            ImSSI = OnlineStats(sMaskN, maxiter);
+            Issi = OnlineStats([1 sMaskN], maxiter);
+            Isur = OnlineStats([1 sMaskN], maxiter);
+            IssiMarg = OnlineStats([1 sMaskN], maxiter);
+            IsurMarg = OnlineStats([1 sMaskN], maxiter);
+            ImSSI = OnlineStats([1 sMaskN], maxiter);
 			
             % Main MC sampling loop
             while cont
@@ -930,6 +930,366 @@ classdef Neurons
 			end
         end
         
+        function [pZgS, hZgS, SSI, SI] = pZgS(obj, stim, maxSpikes)
+            assert(strcmp(obj.distribution, 'Poisson'), 'pZgS() only supports Poisson distribution')
+            assert(~stim.continuous, 'pZgS() only supports discrete stimuli')
+            
+            % Dims: S, Z, R
+            % Set up vector of possible response spike counts
+            rr = permute(0:maxSpikes, [1 3 2]);
+            
+            % Get the expected response as a function of S
+            muRgS = obj.meanR(stim) * obj.integrationTime;
+            % Compute log[ P(R|S) ]
+            lpRgS = bsxfun(@poisspdfln, rr, muRgS);
+            % log[P(R|Z)] is the same but transposed
+            lpRgZ = permute(lpRgS, [2 1 3]);
+            
+            % Prior: log[ P(Z) ]
+            lpZ = log(stim.pS)';
+            % Joint: log[ P(R,Z) ]
+            lpRZ = bsxfun(@plus, lpRgZ, lpZ);
+            % Marginal on R: log[P(R)]
+            lpR = logsumexp(lpRZ, 1);
+            
+            % Conditional: log[ P(Z|R) ]
+            lpZgR = bsxfun(@minus, lpRZ, lpR);
+            % 3-D conditional: log[ P(Z|R|S) ]
+            lpZgRgS = bsxfun(@plus, lpZgR, lpRgS);
+            % Marginalise out R to get log[ P(Z|S) ]
+            lpZgS = logsumexp(lpZgRgS, 3);
+            
+            % Conditional entropy: H(Z|S=s)
+            hZgS = -sum(exp(lpZgS) .* lpZgS, 1) ./ log(2);
+            pZgS = exp(lpZgS);
+            % (Response) Specific information
+            SI = sum(bsxfun(@minus, lpZgR .* exp(lpZgR), lpZ .* exp(lpZ)), 1) ./ log(2);
+            % Stimlus specific information
+            SSI = sum(bsxfun(@times, SI, exp(lpRgS)), 3);
+        end
+        
+        function varargout = pZgS_MC(obj, n, stim, stimOrds, tol, maxiter, timeout)
+            fAdInt = @quad; % Use the quad function
+            trace = false; % debug flag
+            
+            assert(isa(stim, 'StimulusEnsemble'), '%s is not a SimulusEnsemble object', inputname(4))
+            
+            try
+				% Test sanity of neuron indices
+				obj.preferredStimulus(n);
+			catch err %#ok<NASGU>
+				error([inputname(2) ' is not a valid neuron index'])
+            end
+            
+            try
+				% Test sanity of stimulus ordinate indices
+				stim.ensemble(stimOrds);
+			catch err %#ok<NASGU>
+				error([inputname(5) ' is not a valid stimulus ordinate index'])
+            end
+			
+			% Create mask for calculating specific stimulus ordinates only
+            if ~isempty(stimOrds)
+				sMask = false(stim.n, 1);
+				sMask(stimOrds) = true;
+				sMaskN = sum(sMask + 0);
+                stimOrds = find(sMask);
+			else
+				sMask = true(stim.n, 1);
+				sMaskN = stim.n;
+				stimOrds = 1:stim.n;
+            end
+            
+            % Indices for quickly pulling out p(r|s'=s)
+            distPeaks = logical(eye(stim.n));
+            distPeaks = distPeaks(:,sMask);
+            
+			% Get mean responses for each stimulus ordinate
+			% obj.popSize x stim.n
+			rMean = obj.integrationTime .* obj.meanR(stim);
+			rMeanCell = squeeze(mat2cell(rMean, obj.popSize, ones(stim.n, 1)));
+            
+            % Setup for computing marginals
+            if ~isempty(n)
+                % Create logical vector (mask) identifying neurons that are *not* part of the marginal SSI
+                margMask = true(obj.popSize, 1);
+                margMask(n) = false;
+
+                % Get mean responses for each stimulus ordinate
+                rMeanMargCell = cellfun(@(r) r(margMask), rMeanCell, 'UniformOutput', false);
+            end
+            
+            % Do distribution-specific initialisation
+            switch obj.distribution
+                case 'Gaussian'
+                    % Compute mean response dependent cov matrix stack Q [ (popSize x popSize) x stim.n ]
+                    QCell1 = obj.Q(rMeanCell);
+
+                    % Compute lower triangular Chol(Q) for sampling
+                    cholQ = cellfun(@(q) chol(q)', QCell1, 'UniformOutput', false);
+
+                    % Compute upper triangular Chol(Q^-1) for fast PDF computation
+                    cholInvQCell = cellfun(@(q) chol(inv(q)), QCell1, 'UniformOutput', false);
+                    
+                    if ~isempty(n)
+                        % Compute mean response dependent cov matrix stack Q
+                        QCellMarg1 = cellfun(@(q) q(margMask, margMask), QCell1, 'UniformOutput', false);
+
+                        % Invert Q matrices and compute Cholesky decomps
+                        cholInvQCellMarg = cellfun(@(q) chol(inv(q)), QCellMarg1, 'UniformOutput', false);
+                        clear QCellMarg1
+                    end
+                    
+                    clear QCell1
+                    
+                    % Define function for multivariate gaussian sampling
+                    % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                    if obj.truncate
+                        fRand = @(m, c, z) max((m + c * z), 0.0); % truncate
+                    else
+                        fRand = @(m, c, z) m + c * z; % don't truncate
+                    end
+                    
+                case 'Poisson'
+                    % Nothing to be done here
+                    
+                otherwise
+                    error('Unsupported distribution: %s', obj.distribution)
+            end
+			
+            % Initialise main loop, preallocate MC sample arrays
+			iter = 0;
+			cont = true;
+            adaptive = false;
+            delta = 0;
+            
+            pZgS = OnlineStats([stim.n sMaskN], 0, false);
+            pZgSmarg = OnlineStats([stim.n sMaskN], 0, false);
+            
+            % assume accurate prior on Z
+            lpZ = log(stim.pS');
+            
+            % Main MC sampling loop
+            while cont
+                iter = iter + 1;
+                
+                if ~mod(iter, 10)
+					fprintf('pZgS_MC iter: %d (max %d), rel. error: %.4g\n', iter, maxiter, delta)
+                end
+                
+                % Sample r from response distribution
+                switch obj.distribution
+                    case 'Gaussian'
+                        % Generate vector of independent normal random numbers (mu=0, sigma=1)
+                        zCell = mat2cell(randn(obj.popSize, sMaskN), obj.popSize, ones(sMaskN, 1));
+                        % Multiply by Cholesky decomposition of cov matrix Q, and add in mean
+                        % !!! NOTE NEGATIVE RESPONSES MAY BE TRUNCATED TO ZERO, SEE ABOVE !!!
+                        rCell = cellfun(fRand, rMeanCell(sMask), cholQ(sMask), zCell, 'UniformOutput', false); % stim.n cell array of obj.popSize vectors
+
+                    case 'Poisson'
+                        % Sample from Poisson distributions
+                        rCell = cellfun(@poissrnd, rMeanCell(sMask), 'UniformOutput', false);
+                end
+                
+                if ~adaptive
+                    % log P(r|z)
+                    % Calculate response probability densities
+                    switch obj.distribution
+                        case 'Gaussian'
+                            lpRgZ = cell2mat(cellsxfun(@mvnormpdfln, rCell, rMeanCell', cholInvQCell', {'inv'}));
+                        case 'Poisson'
+                            lpRgZ = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCell, rMeanCell'));
+                    end
+
+                    % log P(r,z)
+                    % Mutiply P(r|z) and P(z) to find joint distribution
+                    lpRZ = bsxfun(@plus, lpRgZ, lpZ); % stim'.n x stim
+                        
+                    % log P(r)
+                    % Calculate marginal by integrating over z
+                    offsets = max(lpRZ, [], 1);
+                    lpRZ_offset = bsxfun(@minus, lpRZ, offsets);
+                    lpR = log(stim.integrate(exp(lpRZ_offset), 1));
+                    lpR = lpR + offsets;
+                        
+                   if stim.continuous
+                        % If the stimulus variable is continuous
+                        % Check integration accuracy
+                        lpR_sparse1 = log(stim.integrate(exp(lpRZ_offset(1:2:end,:)), 1));
+                        lpR_sparse2 = log(stim.integrate(exp(lpRZ_offset(2:2:end,:)), 1));
+                        lpR_sparse = mean([lpR_sparse1 ; lpR_sparse2]) + log(2) + offsets;
+
+                        if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
+                            % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                            fprintf('Switching to adaptive integration algorithm.\n')
+                            adaptive = true;
+                        end
+                    end
+                end
+                
+                if adaptive
+                    % log p(r,z)
+                    lpRZ = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim, []), num2cell(stim.ensemble)', rCell));
+                    
+                    % Log space offset for numerical stability
+                    quadOffset = -lpRZ(distPeaks);
+                    
+                    % Absolute tolerance for integration
+                    quadTol = tol * 1e-2;
+                    
+                    for si = 1 : sMaskN
+                        pR = [0 0 0];
+                        bin = stimOrds(si);
+                        r = rCell{si};
+                        
+                        switch bin
+                            case 1 % Bottom bin - do first 2 bins, remainder
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            case stim.n % Top bin - do first bin, last bin, remainder
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                            otherwise % Other bins - do one bin either side, remainder above, remainder below
+                                [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), []), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                        end
+                        
+                        lpR(1,si) = log(sum(pR)) - quadOffset(si);
+                    end
+                end
+                
+				% log P(z|r)
+				% Divide joint by marginal P(r)
+				lpZgR = bsxfun(@minus, lpRZ, lpR);
+                
+                % accumulate sample
+                pZgS.appendSample(exp(lpZgR));
+				
+                if exist('margMask', 'var')
+					% If we are calculating a residual distribution, compute the pZgS for remaining neurons
+                    
+					% Mask out neurons of interest in response vectors
+					rCellMarg = cellfun(@(r) r(margMask), rCell, 'UniformOutput', false);
+                    
+                    if ~adaptive
+                        % log P(r|z)
+                        % Calculate response probability densities
+                        switch obj.distribution
+                            case 'Gaussian'
+                                lpRgZ = cell2mat(cellsxfun(@mvnormpdfln, rCellMarg, rMeanMargCell', cholInvQCellMarg', {'inv'}));
+                            case 'Poisson'
+                                lpRgZ = cell2mat(cellsxfun(@(x, l) sum(poisspdfln(x, l)), rCellMarg, rMeanMargCell'));
+                        end
+                        
+                        % log P(r,z)
+                        % Mutiply P(r|z) and P(z) to find joint distribution
+                        lpRZ = bsxfun(@plus, lpRgZ, lpZ); % stim'.n x stim
+
+                        % log P(r)
+                        % Calculate marginal by integrating over s'
+                        offsets = max(lpRZ, [], 1);
+                        lpRZ_offset = bsxfun(@minus, lpRZ, offsets);
+                        lpR = log(stim.integrate(exp(lpRZ_offset), 1));
+                        lpR = lpR + offsets;
+
+                       if stim.continuous
+                            % If the stimulus variable is continuous
+                            % Check integration accuracy
+                            lpR_sparse1 = log(stim.integrate(exp(lpRZ_offset(1:2:end,:)), 1));
+                            lpR_sparse2 = log(stim.integrate(exp(lpRZ_offset(2:2:end,:)), 1));
+                            lpR_sparse = mean([lpR_sparse1 ; lpR_sparse2]) + log(2) + offsets;
+                            
+                            if any((lpR_sparse - lpR) ./ lpR > tol * 1e-2)
+                                % One-shot trapezoid rule is insufficiently accurate; switch to adaptive method
+                                fprintf('Switching to adaptive integration algorithm.\n')
+                                adaptive = true;
+                            end
+                        end
+                    end
+
+                    if adaptive
+                        % log p(r,z)
+                        lpRZ = cell2mat(cellsxfun(@(a,b) obj.flpSR(a, b, stim, margMask), num2cell(stim.ensemble)', rCellMarg));
+
+                        % Log space offset for numerical stability
+                        quadOffset = -lpRZ(distPeaks);
+
+                        % Absolute tolerance for integration
+                        quadTol = tol * 1e-2;
+
+                        for si = 1 : sMaskN
+                            pR = [0 0 0];
+                            bin = stimOrds(si);
+                            r = rCellMarg{si};
+
+                            switch bin
+                                case 1 % Bottom bin - do first 2 bins, remainder
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                                case stim.n % Top bin - do first bin, last bin, remainder
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(1), stim.ensemble(end-1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(end-1), stim.upperLimit, quadTol, trace);
+                                otherwise % Other bins - do one bin either side, remainder above, remainder below
+                                    [pR(1), fcnt(1)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.lowerLimit, stim.ensemble(bin-1), quadTol, trace);
+                                    [pR(2), fcnt(2)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin-1), stim.ensemble(bin+1), quadTol, trace);
+                                    [pR(3), fcnt(3)] = fAdInt(@(s) obj.fpSR_offset(s, r, stim, quadOffset(si), margMask), stim.ensemble(bin+1), stim.upperLimit, quadTol, trace);
+                            end
+
+                            lpR(1,si) = log(sum(pR)) - quadOffset(si);
+                        end
+                    end
+                    
+					% log P(z|r)
+					% Divide joint by marginal P(r)
+					lpZgR = bsxfun(@minus, lpRZ, lpR);
+                    
+                    % accumulate sample
+                    pZgSmarg.appendSample(exp(lpZgR));
+                end
+                
+                % Test halting criteria (SEM, max iterations limit, timeout)
+                if exist('margMask', 'var')
+                    delta = max(cat(3, pZgS.runSEM, pZgSmarg.runSEM), [], 3);
+                    delta = mean(delta(:));
+                else
+                    delta = pZgS.runSEM;
+                    delta = sum(delta(:));
+                end
+                
+                cont = delta > tol & iter < maxiter;
+                
+                % If the wall clock is running, check the elapsed time
+                try
+                    cont = cont && toc < timeout;
+                catch
+                    % do nothing
+                end
+                
+                % Impose minimum iteration limit so we get a valid estimate of SEM
+                cont = cont | iter < 100;
+            end
+            
+            try
+                fprintf('pZgS_MC iter: %d  elapsed time: %.4f seconds\n', iter, toc)
+            catch
+                fprintf('pZgS_MC iter: %d\n', iter)
+            end
+            
+            % Conditional entropy: H(Z|S=s)
+            hZgS = -sum(pZgS.runMean .* log2(pZgS.runMean), 1);
+            
+            if exist('margMask', 'var')
+                hZgSmarg = -sum(pZgSmarg.runMean .* log2(pZgSmarg.runMean), 1);
+                varargout = {pZgS.runMean, pZgSmarg.runMean, hZgS, hZgSmarg};
+            else
+                varargout = {pZgS.runMean, hZgS};
+            end
+
+        end
+        
         function h = noiseEntropy(obj, stim, tol)
             % Get mean responses for each stimulus ordinate
             % obj.popSize x stim.n
@@ -1182,7 +1542,7 @@ classdef Neurons
             iter = 0;
             cont = true;
 
-            FI = OnlineStats(stim.n, maxiter);
+            FI = OnlineStats([1 stim.n], maxiter);
 
             while cont
                 iter = iter + 1;
