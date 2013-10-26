@@ -1065,6 +1065,7 @@ classdef Neurons
             
             pZgS = OnlineStats([stim.n sMaskN], 0, false);
             pZgSmarg = OnlineStats([stim.n sMaskN], 0, false);
+            pZgSdiff = OnlineStats([stim.n sMaskN], 0, false);
             
             % assume accurate prior on Z
             lpZ = log(stim.pS');
@@ -1165,7 +1166,8 @@ classdef Neurons
 				lpZgR = bsxfun(@minus, lpRZ, lpR);
                 
                 % accumulate sample
-                pZgS.appendSample(exp(lpZgR));
+                pZgS_samp = exp(lpZgR);
+                pZgS.appendSample(pZgS_samp);
 				
                 if exist('margMask', 'var')
 					% If we are calculating a residual distribution, compute the pZgS for remaining neurons
@@ -1247,16 +1249,19 @@ classdef Neurons
 					lpZgR = bsxfun(@minus, lpRZ, lpR);
                     
                     % accumulate sample
-                    pZgSmarg.appendSample(exp(lpZgR));
+                    pZgSmarg_samp = exp(lpZgR);
+                    pZgSdiff_samp = pZgS_samp - pZgSmarg_samp;
+                    pZgSmarg.appendSample(pZgSmarg_samp);
+                    pZgSdiff.appendSample(pZgSdiff_samp);
                 end
                 
                 % Test halting criteria (SEM, max iterations limit, timeout)
                 if exist('margMask', 'var')
-                    delta = max(cat(3, pZgS.runSEM, pZgSmarg.runSEM), [], 3);
+                    delta = max(cat(3, pZgS.runSEM, pZgSdiff.runSEM), [], 3);
                     delta = mean(delta(:));
                 else
                     delta = pZgS.runSEM;
-                    delta = sum(delta(:));
+                    delta = mean(delta(:));
                 end
                 
                 cont = delta > tol & iter < maxiter;
@@ -1283,11 +1288,59 @@ classdef Neurons
             
             if exist('margMask', 'var')
                 hZgSmarg = -sum(pZgSmarg.runMean .* log2(pZgSmarg.runMean), 1);
-                varargout = {pZgS.runMean, pZgSmarg.runMean, hZgS, hZgSmarg};
+                varargout = {pZgS, pZgSmarg, pZgSdiff, hZgS, hZgSmarg};
             else
-                varargout = {pZgS.runMean, hZgS};
+                varargout = {pZgS, hZgS};
             end
 
+        end
+        
+        function dc = ChernoffDistMatrix(obj, stim, tol, cumulative)
+            assert(isa(stim, 'StimulusEnsemble'), '%s is not a SimulusEnsemble object', inputname(2))
+            assert(strcmp(obj.distribution, 'Poisson'), 'pZgS() only supports Poisson distribution')
+            
+            % Get the expected responses
+            lambda = obj.meanR(stim) * obj.integrationTime;
+            lambdaCell = squeeze(mat2cell(lambda, obj.popSize, ones(stim.n, 1)));
+            
+            if cumulative
+                dc = zeros([stim.n stim.n obj.popSize]);
+            else
+                dc = zeros([stim.n stim.n]);
+            end
+            
+            
+            
+            
+            for i = 1 : numel(dc)
+                l1 = lambda1{i}(:);
+                l2 = lambda2{i}(:);
+                t1 = log(l1);
+                t2 = log(l2);
+
+                % Compute alpha* (Chernoff exponent) iteratively
+                upper = 1;
+                lower = 0;
+                err = 1;
+                tol = 0.5 * tol;
+                while err > tol
+                    alpha = 0.5 * (upper + lower);
+                    t = t2 - alpha .* (t2 - t1);
+                    BD1 = sum(l1) - sum(exp(t)) - (t1 - t)' * exp(t);
+                    BD2 = sum(l2) - sum(exp(t)) - (t2 - t)' * exp(t);
+
+                    if BD1 < BD2
+                        upper = alpha;
+                    else
+                        lower = alpha;
+                    end
+
+                    err = abs(BD1 - BD2) / (BD1 + BD2);
+                end
+
+                % Compute Chernoff dist given alpha
+                dc(i) = sum(l2 + alpha*(l1-l2) - l1.^alpha .* l2.^(1-alpha));
+            end
         end
         
         function h = noiseEntropy(obj, stim, tol)
