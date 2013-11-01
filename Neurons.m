@@ -1297,50 +1297,21 @@ classdef Neurons
         
         function dc = ChernoffDistMatrix(obj, stim, tol, cumulative)
             assert(isa(stim, 'StimulusEnsemble'), '%s is not a SimulusEnsemble object', inputname(2))
-            assert(strcmp(obj.distribution, 'Poisson'), 'pZgS() only supports Poisson distribution')
+            assert(strcmp(obj.distribution, 'Poisson'), 'ChernoffDistMatrix() only supports Poisson distribution')
+            
+            assert(~cumulative, 'Cumulative algorithm not yet implemented')
             
             % Get the expected responses
-            lambda = obj.meanR(stim) * obj.integrationTime;
+            lambda = obj.meanR(stim) .* obj.integrationTime;
             lambdaCell = squeeze(mat2cell(lambda, obj.popSize, ones(stim.n, 1)));
             
-            if cumulative
-                dc = zeros([stim.n stim.n obj.popSize]);
-            else
-                dc = zeros([stim.n stim.n]);
-            end
+            %if cumulative
+            %    dc = zeros([stim.n stim.n obj.popSize]);
+            %else
+            %    dc = zeros([stim.n stim.n]);
+            %end
             
-            
-            
-            
-            for i = 1 : numel(dc)
-                l1 = lambda1{i}(:);
-                l2 = lambda2{i}(:);
-                t1 = log(l1);
-                t2 = log(l2);
-
-                % Compute alpha* (Chernoff exponent) iteratively
-                upper = 1;
-                lower = 0;
-                err = 1;
-                tol = 0.5 * tol;
-                while err > tol
-                    alpha = 0.5 * (upper + lower);
-                    t = t2 - alpha .* (t2 - t1);
-                    BD1 = sum(l1) - sum(exp(t)) - (t1 - t)' * exp(t);
-                    BD2 = sum(l2) - sum(exp(t)) - (t2 - t)' * exp(t);
-
-                    if BD1 < BD2
-                        upper = alpha;
-                    else
-                        lower = alpha;
-                    end
-
-                    err = abs(BD1 - BD2) / (BD1 + BD2);
-                end
-
-                % Compute Chernoff dist given alpha
-                dc(i) = sum(l2 + alpha*(l1-l2) - l1.^alpha .* l2.^(1-alpha));
-            end
+            dc = cell2mat(cellsxfun(@obj.chernDistPoiss, lambdaCell, lambdaCell', {tol}));
         end
         
         function h = noiseEntropy(obj, stim, tol)
@@ -1696,7 +1667,41 @@ classdef Neurons
         function pSR = fpSR_offset(obj, s, r, stim, logOffset, inds)
             pSR = exp(flpSR(obj, s, r, stim, inds) + logOffset);
         end
- 
+        
+    end
+    
+    methods (Static)
+        
+        function dc = chernDistPoiss(l1, l2, tol)
+            l1 = l1(:);
+            l2 = l2(:);
+            t1 = log(l1);
+            t2 = log(l2);
+
+            % Compute alpha* (Chernoff exponent) iteratively
+            upper = 1;
+            lower = 0;
+            err = 1;
+            tol = 0.5 * tol;
+            while err > tol
+                chernExp = 0.5 * (upper + lower);
+                t = t2 - chernExp .* (t2 - t1);
+                BD1 = sum(l1) - sum(exp(t)) - (t1 - t)' * exp(t);
+                BD2 = sum(l2) - sum(exp(t)) - (t2 - t)' * exp(t);
+
+                if BD1 < BD2
+                    upper = chernExp;
+                else
+                    lower = chernExp;
+                end
+
+                err = abs(BD1 - BD2) / (BD1 + BD2);
+            end
+
+            % Compute Chernoff dist given alpha
+            dc = sum(l2 + chernExp*(l1-l2) - l1.^chernExp .* l2.^(1-chernExp));
+        end
+        
     end
 
 end
