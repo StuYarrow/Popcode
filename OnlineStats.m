@@ -24,7 +24,7 @@ classdef OnlineStats < handle
             
             switch nargin
                 case 0
-                    sz = 1;
+                    sz = [1 1];
                     maxiter = 1;
                 case 2
                     sz = varargin{1};
@@ -69,6 +69,10 @@ classdef OnlineStats < handle
             obj.runM2 = obj.runM2 + delta .* (sample - obj.runMean);
         end
         
+        function samp = sample(obj, i)
+            samp = obj.samples(:,:,i);
+        end
+        
         function trim(obj)
             obj.samples = obj.samples(:,:,1:obj.iter);
         end
@@ -89,8 +93,12 @@ classdef OnlineStats < handle
             end
         end
         
-        function err = sem(obj)
-            err = sqrt(var(obj.samples(:,:,1:obj.iter), 3) ./ obj.iter);
+        function se = sem(obj)
+            if obj.logging
+                se = sqrt(var(obj.samples(:,:,1:obj.iter), 0, 3) ./ obj.iter);
+            else
+                se = obj.runSEM;
+            end
         end
         
         function delta = runDelta(obj)

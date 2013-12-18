@@ -415,7 +415,6 @@ classdef Neurons
             Isur = OnlineStats([1 sMaskN], maxiter);
             IssiMarg = OnlineStats([1 sMaskN], maxiter);
             IsurMarg = OnlineStats([1 sMaskN], maxiter);
-            ImSSI = OnlineStats([1 sMaskN], maxiter);
 			
             % Main MC sampling loop
             while cont
@@ -519,10 +518,7 @@ classdef Neurons
 				lpSgR = bsxfun(@minus, lpRS, lpR);
                 
                 % H(s'|r), in bits, converting from log_e to log_2
-                hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);                    
-                
-                %hSgR2 = (-sum(exp(lpRgS) .* lpRgS, 1) ./ sum(exp(lpRgS), 1) + logsumexp(lpRgS, 1)) ./ log(2);
-                %assert((hSgR2 - hSgR) ./ hSgR < 0.01, 'Something wrong')
+                hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
                 
                 if stim.continuous
                     % Check accuracy of integration
@@ -540,7 +536,8 @@ classdef Neurons
                 
 				% Sample specific information Isp(r)
 				% Specific information; reduction in stimulus entropy due to observation of r
-				Issi.appendSample(stim.entropy - hSgR);
+                fSSIsamp = stim.entropy - hSgR;
+				Issi.appendSample(fSSIsamp);
                 
                 % Sample specific surprise
 				% log_2( P(r|s) / P(r) )
@@ -646,8 +643,8 @@ classdef Neurons
 					% Isp(r)
 					% Specific information; reduction in stimulus entropy due to observation of r
                     % Compute MC sample
-                    IssiMarg.appendSample(stim.entropy - hSgR);
-                    ImSSI.appendSample(Issi.samples(Issi.iter,:) - IssiMarg.samples(IssiMarg.iter,:));
+                    rSSIsamp = stim.entropy - hSgR;
+                    IssiMarg.appendSample(rSSIsamp);
                     
 					
                     % Specific surprise
@@ -658,7 +655,7 @@ classdef Neurons
                 
                 % Test halting criteria (SEM, max iterations limit, timeout)
                 if exist('margMask', 'var')
-                    delta = mean(max([Issi.runDelta ; IssiMarg.runDelta ; ImSSI.runDelta], [], 1));
+                    delta = mean(max([Issi.runDelta ; IssiMarg.runDelta], [], 1));
                 else
                     delta = mean(Issi.runDelta);
                 end
