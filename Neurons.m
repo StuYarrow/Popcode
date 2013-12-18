@@ -315,6 +315,12 @@ classdef Neurons
             trace = false; % debug flag
             
             try
+                time = toc; %#ok<NASGU>
+            catch
+                tic;
+            end
+            
+            try
 				% Test sanity of neuron indices
 				obj.preferredStimulus(n);
 			catch err %#ok<NASGU>
@@ -410,6 +416,7 @@ classdef Neurons
 			cont = true;
             adaptive = false;
             delta = 0;
+            lastUpdate = toc;
             
             Issi = OnlineStats([1 sMaskN], maxiter);
             Isur = OnlineStats([1 sMaskN], maxiter);
@@ -420,8 +427,10 @@ classdef Neurons
             while cont
                 iter = iter + 1;
                 
-                if ~mod(iter, 10)
+                time = toc;
+                if ~mod(iter, 10) && (time - lastUpdate) > 10
 					fprintf('SSISS iter: %d of %d, rel. error: %.4g\n', iter, maxiter, delta)
+                    lastUpdate = toc;
                 end
                 
                 switch method
