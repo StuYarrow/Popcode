@@ -530,16 +530,12 @@ classdef Neurons
                 hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
                 
                 if stim.continuous
-                    % Check accuracy of integration
-                    spacing = 1 / (stim.n - 1);
-                    d1 = gradient(exp(lpSgR') .* (lpSgR' ./ log(2)), spacing);
-                    d2 = gradient(d1, spacing);
-                    maxDiff2 = max(abs(d2), [], 2);
-                    errLim = maxDiff2 ./ (12 * stim.n^2);
-                    propErrLim = errLim' ./ hSgR;
+                    sparse1 = -stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
+                    sparse2 = -stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
+                    propErr = (sparse1 + sparse2) ./ hSgR - 1;
 
-                    if any(propErrLim > 0.05)
-                        warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).')
+                    if any(propErr > 0.1)
+                        warning('popcode:badintegration', 'Possible insufficient sampling density for numerical integration (H(S''|r)).')
                     end
                 end
                 
@@ -636,16 +632,12 @@ classdef Neurons
                     hSgR = -stim.integrate(exp(lpSgR) .* (lpSgR ./ log(2)), 1);
                                         
                     if stim.continuous
-                        % Check accuracy of integration
-                        spacing = 1 / (stim.n - 1);
-                        d1 = gradient(exp(lpSgR') .* (lpSgR' ./ log(2)), spacing);
-                        d2 = gradient(d1, spacing);
-                        maxDiff2 = max(abs(d2), [], 2);
-                        errLim = maxDiff2 ./ (12 * stim.n^2);
-                        propErrLim = errLim' ./ hSgR;
-                        
-                        if any(propErrLim > 0.05)
-                            warning('popcode:badintegration', 'Insufficient sampling density for numerical integration (H(S''|r)).')
+                        sparse1 = -stim.integrate(exp(lpSgR(1:2:end,:)) .* (lpSgR(1:2:end,:) ./ log(2)), 1);
+                        sparse2 = -stim.integrate(exp(lpSgR(2:2:end,:)) .* (lpSgR(2:2:end,:) ./ log(2)), 1);
+                        propErr = (sparse1 + sparse2) ./ hSgR - 1;
+
+                        if any(propErr > 0.1)
+                            warning('popcode:badintegration', 'Possible insufficient sampling density for numerical integration (H(S''|r)).')
                         end
                     end
                     

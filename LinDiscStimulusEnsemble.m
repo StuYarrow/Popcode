@@ -18,6 +18,12 @@ classdef LinDiscStimulusEnsemble < DiscreteStimulusEnsemble
                 obj.ensemble = double(varargin{1});
                 obj.pS = 1.0 ./ double(obj.n) .* ones(1, obj.n);
                 
+            case 2
+                obj.ensemble = double(varargin{1});
+                obj.pS = double(varargin{2});
+                
+                assert(all(size(obj.ensemble) == size(obj.pS)), 'Ensemble value and probability arrays must be the same size')
+                
             case 4
                 bottom = double(varargin{1});
                 top = double(varargin{2});

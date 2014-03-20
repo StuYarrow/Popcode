@@ -86,11 +86,16 @@ classdef GaussNeurons < Neurons
             else
                 error('Invalid stimulus: stim may be a StimulusEnsemble object or vector of stimulus values only')
             end
-
+            
 			r = maxRates .* exp(-((stims - centres).^2) ./ (2.0 .* widths.^2)) + backgroundRates;
+            nullStim = isnan(stims);
+            r(nullStim) = backgroundRates(nullStim);
 		end
 		
 		function dr = dMeanR(obj, stim)
+        % DMEANR calculates the derivative of the tuning curve
+		% dr = dMeanR(obj, stim)
+        
             if isa(stim, 'StimulusEnsemble')
                 assert(stim.dimensionality == 1, 'SigmoidNeurons only supports 1-D stimuli at present')
                 stims = repmat(stim.ensemble, [obj.popSize 1]);
@@ -110,11 +115,8 @@ classdef GaussNeurons < Neurons
         end
 		
         function obj = remove(obj, nMarg)
-        % CIRCGAUSSNEURONS/DMEANR calculates the derivative of the tuning curve
-		% dr dr = dMeanR(obj, stim)
-
 			% Call superclass method
-			[obj margMask] = remove@Neurons(obj, nMarg);
+			[obj, margMask] = remove@Neurons(obj, nMarg);
 			
 			% Deal with subclass properties
             if length(obj.width) > 1

@@ -13,7 +13,18 @@ classdef LinContStimulusEnsemble < ContinuousStimulusEnsemble
             switch nargin
             case 0
                 % do nothing
-                                
+                
+            case 2
+                obj.ensemble = double(varargin{1}(:)');
+                obj.pS = double(varargin{2}(:)');
+                
+                assert(all(diff(diff(obj.ensemble)) < 1e-8), 'Stimulus distribution points must be regularly spaced')
+                
+                obj.width = diff(obj.ensemble(1:2));
+                obj.lowerLimit = obj.ensemble(1);
+                obj.upperLimit = obj.ensemble(end);
+                obj.pS = obj.pS ./ obj.integrate(obj.pS, 2);
+                
             case 3
                 bottom = double(varargin{1});
                 top = double(varargin{2});

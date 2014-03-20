@@ -90,6 +90,8 @@ classdef SigmoidNeurons < Neurons
             end
 			
             r = maxRates ./ (1 + exp(-(stims - centres) ./ widths)) + backgroundRates;
+            nullStim = isnan(stims);
+            r(nullStim) = backgroundRates(nullStim);
 		end
 		
 		function dr = dMeanR(obj, stim)
@@ -116,7 +118,7 @@ classdef SigmoidNeurons < Neurons
         
 		function obj = remove(obj, nMarg)			
 			% Call superclass method
-			[obj margMask] = remove@Neurons(obj, nMarg);
+			[obj, margMask] = remove@Neurons(obj, nMarg);
             
             if ~isscalar(obj.width)
                 obj.width = obj.width(margMask);
